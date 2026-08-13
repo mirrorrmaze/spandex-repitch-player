@@ -1,0 +1,6 @@
+[submodule "libs/JUCE"]
+	path = libs/JUCE
+	url = https://github.com/juce-framework/JUCE.git
+[submodule "libs/rubberband"]
+	path = libs/rubberband
+	url = https://github.com/breakfastquay/rubberband.git
