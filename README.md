@@ -14,16 +14,22 @@ built-in FX chain and 8-band EQ before exporting or recording the result in your
 - **Pitch/Speed control**, either **Link (Re-Pitch)** (speed and pitch move together, like a
   turntable pitch fader) or independent via a selectable **Warp Mode** -- Beats (percussive),
   Tones (monophonic), Texture (pads/ambient), or Complex/Complex Pro (full mix).
-- **FX chain**: Reverb, Granular Delay, Frequency Shifter/Ring Modulator, Smudge (a spectral
-  freeze/smear effect), and a Drive/Compression bus stage (OTT-style aggressive compressor
-  blended in via a dry/wet knob, plus tanh saturation).
-- **8-band parametric EQ** (high-pass, low-pass, shelves, bell, notch, band-pass) with a live
-  spectrum analyzer drawn behind the curve, auto-normalized to the signal's own peak.
 - **Runtime GUI themes** -- Default, Matrix (phosphor green terminal), and Amber Terminal,
   switchable from the "..." menu without restarting.
 - **Export** (Standalone only -- inside a DAW, just record/resample SPANDEX's output on another
   track): WAV/AIFF/FLAC/MP3 at full offline quality, matching whatever pitch/speed/warp/FX
   settings are currently dialed in.
+
+![SPANDEX FX tab](docs/screenshot-fx.png)
+
+**FX chain**: Reverb, Granular Delay, Frequency Shifter/Ring Modulator, Smudge (a spectral
+freeze/smear effect), and a Drive/Compression bus stage (OTT-style aggressive compressor
+blended in via a dry/wet knob, plus tanh saturation).
+
+![SPANDEX EQ tab](docs/screenshot-eq.png)
+
+**8-band parametric EQ** (high-pass, low-pass, shelves, bell, notch, band-pass) with a live
+spectrum analyzer drawn behind the curve, auto-normalized to the signal's own peak.
 
 ## Installing
 
