@@ -3,12 +3,13 @@
 #include <JuceHeader.h>
 #include "Theme.h"
 
-// Old-PC terminal theme: flat rectangular widgets with hairline borders
-// instead of gradients or glows - closer to a CRT monitor or a DOS-era
-// hardware panel than a modern plugin GUI. Simpler by design: no shadows,
-// no soft edges, high-contrast two-tone everything. The actual colour
-// values are switchable at runtime (see applyTheme()) - Default keeps the
-// original charcoal/white look, other themes swap the whole palette.
+// Flat rectangular widgets with hairline borders instead of gradients or
+// glows - simpler by design, no shadows, no soft edges, high-contrast
+// two-tone everything. The actual colour values are switchable at runtime
+// (see applyTheme()) - Default keeps the original charcoal/white look,
+// other themes swap the whole palette. The typeface is the platform's own
+// modern system UI font rather than a bundled webfont, so no font file
+// needs shipping and it stays visually native on both Windows and macOS.
 class AppLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -25,8 +26,15 @@ public:
         // which resolves lazily back through the active LookAndFeel's
         // getTypefaceForFont() and recurses infinitely (stack overflow -
         // crashed on launch the first time this was tried).
-        monoRegular = juce::Typeface::createSystemTypefaceFor(juce::Font(juce::FontOptions("Consolas", 16.0f, juce::Font::plain)));
-        monoBold = juce::Typeface::createSystemTypefaceFor(juce::Font(juce::FontOptions("Consolas", 16.0f, juce::Font::bold)));
+       #if JUCE_WINDOWS
+        constexpr const char* uiFontName = "Segoe UI";
+       #elif JUCE_MAC
+        constexpr const char* uiFontName = "Helvetica Neue";
+       #else
+        constexpr const char* uiFontName = "Verdana";
+       #endif
+        uiRegular = juce::Typeface::createSystemTypefaceFor(juce::Font(juce::FontOptions(uiFontName, 16.0f, juce::Font::plain)));
+        uiBold = juce::Typeface::createSystemTypefaceFor(juce::Font(juce::FontOptions(uiFontName, 16.0f, juce::Font::bold)));
 
         applyColours();
     }
@@ -52,7 +60,7 @@ public:
 
     juce::Typeface::Ptr getTypefaceForFont(const juce::Font& f) override
     {
-        return f.isBold() ? monoBold : monoRegular;
+        return f.isBold() ? uiBold : uiRegular;
     }
 
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
@@ -249,7 +257,7 @@ private:
 
     static juce::String currentThemeName;
 
-    juce::Typeface::Ptr monoRegular, monoBold;
+    juce::Typeface::Ptr uiRegular, uiBold;
 };
 
 inline juce::Colour AppLookAndFeel::bg { Themes::defaultTheme.bg };
