@@ -131,6 +131,16 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
     {
         audioEngine.setLooping(loopControls.loopToggle.getToggleState());
     };
+    loopControls.loopModeBox.onChange = [this]
+    {
+        using LoopMode = StretchAudioSource::LoopMode;
+        switch (loopControls.loopModeBox.getSelectedId())
+        {
+            case 2:  audioEngine.setLoopMode(LoopMode::PingPong); break;
+            case 3:  audioEngine.setLoopMode(LoopMode::Reverse);  break;
+            default: audioEngine.setLoopMode(LoopMode::Forward);  break;
+        }
+    };
     loopControls.crossfadeSlider.onValueChange = [this]
     {
         audioEngine.setLoopCrossfadeMs((float) loopControls.crossfadeSlider.getValue());
@@ -299,11 +309,11 @@ void MainComponent::resized()
 
 #if JucePlugin_Build_Standalone
     auto exportArea = bounds.removeFromBottom(60).reduced(8, 4);
-    loopControls.setBounds(exportArea.removeFromRight(400));
+    loopControls.setBounds(exportArea.removeFromRight(480));
     exportPanel.setBounds(exportArea);
 #else
     auto loopArea = bounds.removeFromBottom(60).reduced(8, 4);
-    loopControls.setBounds(loopArea.removeFromRight(400));
+    loopControls.setBounds(loopArea.removeFromRight(480));
 #endif
 
     controlsCard = bounds.removeFromBottom(120).reduced(8, 4);

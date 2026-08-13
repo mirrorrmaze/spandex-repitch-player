@@ -139,6 +139,135 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
     }
 
     {
+        // Loop correctness, using a hand-built tone (not the external input
+        // file) so the exact content is known and mirror/reversal
+        // comparisons below are meaningful, not just "sounds about right."
+        const double sr = 44100.0;
+        const int totalSrcSamples = (int) (2.0 * sr);
+        juce::AudioBuffer<float> toneBuf(2, totalSrcSamples);
+        for (int i = 0; i < totalSrcSamples; ++i)
+        {
+            const float s = 0.5f * std::sin(2.0f * juce::MathConstants<float>::pi * 220.0f * (float) i / (float) sr);
+            toneBuf.setSample(0, i, s);
+            toneBuf.setSample(1, i, s);
+        }
+
+        using LM = StretchAudioSource::LoopMode;
+        const juce::int64 regionStartSamples = (juce::int64) (0.5 * sr);
+        const juce::int64 regionEndSamples = (juce::int64) (0.9 * sr);
+        const juce::int64 regionLen = regionEndSamples - regionStartSamples;
+
+        auto renderLoop = [&](bool linked, LM mode, double renderSeconds, double crossfadeSeconds)
+            -> std::pair<juce::AudioBuffer<float>, bool>
+        {
+            StretchAudioSource s;
+            s.setBuffer(toneBuf, sr);
+            s.setLinked(linked);
+            s.setPitchSemitones(0.0);
+            s.setSpeedPercent(100.0);
+            if (!linked)
+                s.setWarpMode(StretchAudioSource::WarpMode::Complex);
+            s.setLoopCrossfadeSeconds(crossfadeSeconds);
+            s.setLoopRegion(regionStartSamples, regionEndSamples);
+            s.setLoopMode(mode);
+            s.setLooping(true);
+            s.setNextReadPosition(mode == LM::Reverse ? regionEndSamples - 1 : regionStartSamples);
+            s.play();
+
+            const int totalSamples = (int) (sr * renderSeconds);
+            juce::AudioBuffer<float> buf(2, totalSamples);
+            buf.clear();
+            int rendered = 0;
+            while (rendered < totalSamples)
+            {
+                const int thisBlock = juce::jmin(512, totalSamples - rendered);
+                juce::AudioSourceChannelInfo info(&buf, rendered, thisBlock);
+                s.getNextAudioBlock(info);
+                rendered += thisBlock;
+            }
+            return { std::move(buf), s.isPlaying() };
+        };
+
+        // 1) Regression: Warp mode looping a short region for well past
+        // several repeats must never stop - this is the actual bug the
+        // user reported ("the sample will stop at the end of the loop each
+        // time"), caused by renderWarped's avail==0/finalSent branch
+        // unconditionally calling playing.store(false) regardless of
+        // isLoopingNow.
+        {
+            const auto result = renderLoop(false, LM::Forward, 4.0, 0.02);
+            const auto& buf = result.first;
+            const int tailStart = juce::jmax(0, buf.getNumSamples() - (int) sr);
+            double tailSumSq = 0.0;
+            for (int i = tailStart; i < buf.getNumSamples(); ++i)
+                tailSumSq += (double) buf.getSample(0, i) * buf.getSample(0, i);
+            const float tailRms = (float) std::sqrt(tailSumSq / (double) (buf.getNumSamples() - tailStart));
+            juce::Logger::writeToLog("looptest: warpForward stillPlaying=" + juce::String((int) result.second)
+                + " tailRms=" + juce::String(tailRms, 4)
+                + " (expect stillPlaying=1 and tailRms clearly nonzero - loop must keep repeating past several cycles, not stop)");
+        }
+
+        // 2) Crossfade: a Forward loop's level right around the wrap should
+        // stay close to its level well inside the loop - the old approach
+        // ducked to silence and back at every repeat, which this directly
+        // catches as a level drop the new source-domain crossfade shouldn't
+        // have.
+        {
+            const auto result = renderLoop(true, LM::Forward, 2.0, 0.02);
+            const auto& buf = result.first;
+            const int wrapCentre = (int) regionLen;
+            const int xfadeSamples = (int) (0.02 * sr);
+            auto rmsOf = [&](int start, int len)
+            {
+                double sum = 0.0;
+                int n = 0;
+                for (int i = juce::jmax(0, start); i < juce::jmin(buf.getNumSamples(), start + len); ++i, ++n)
+                    sum += (double) buf.getSample(0, i) * buf.getSample(0, i);
+                return n > 0 ? (float) std::sqrt(sum / (double) n) : 0.0f;
+            };
+            const float wrapRms = rmsOf(wrapCentre - xfadeSamples, xfadeSamples * 2);
+            const float steadyRms = rmsOf((int) (0.1 * sr), xfadeSamples * 2);
+            juce::Logger::writeToLog("looptest: crossfade wrapRms=" + juce::String(wrapRms, 4)
+                + " steadyRms=" + juce::String(steadyRms, 4)
+                + " (expect wrapRms close to steadyRms - a true crossfade shouldn't dip toward silence the way the old duck envelope did)");
+        }
+
+        // 3) PingPong: the backward pass immediately following the forward
+        // pass must be an exact time-reversal of it - a direction flip has
+        // no discontinuity to smooth over, so no crossfade is involved.
+        // Crossfade length forced to 0 to isolate direction correctness
+        // from the (separately tested) crossfade blending. The pivot
+        // sample (cursor exactly at regionEnd, buffer index n) is read
+        // once, shared by both passes, so samples equidistant from it -
+        // buf[n-1-k] and buf[n+1+k] - are the ones that should match, not
+        // a naive buf[i] vs buf[2n-1-i] split (which is off by the one
+        // pivot sample and would flag a spurious one-sample phase diff).
+        {
+            const auto result = renderLoop(true, LM::PingPong, 2.0 * (double) regionLen / sr, 0.0);
+            const auto& buf = result.first;
+            const int n = (int) regionLen;
+            double maxDiff = 0.0;
+            for (int k = 0; k < n - 1 && (n + 1 + k) < buf.getNumSamples(); ++k)
+                maxDiff = juce::jmax(maxDiff, (double) std::abs(buf.getSample(0, n - 1 - k) - buf.getSample(0, n + 1 + k)));
+            juce::Logger::writeToLog("looptest: pingpong mirrorMaxDiff=" + juce::String(maxDiff, 5)
+                + " (expect near 0 - the backward pass must be an exact time-reversal of the forward pass)");
+        }
+
+        // 4) Reverse: rendering the region in Reverse mode should exactly
+        // match a Forward-mode render of the same region, time-reversed.
+        {
+            const auto fwd = renderLoop(true, LM::Forward, (double) regionLen / sr, 0.0);
+            const auto rev = renderLoop(true, LM::Reverse, (double) regionLen / sr, 0.0);
+            const int n = juce::jmin(fwd.first.getNumSamples(), rev.first.getNumSamples());
+            double maxDiff = 0.0;
+            for (int i = 0; i < n; ++i)
+                maxDiff = juce::jmax(maxDiff, (double) std::abs(fwd.first.getSample(0, i) - rev.first.getSample(0, n - 1 - i)));
+            juce::Logger::writeToLog("looptest: reverse maxDiffVsTimeReversedForward=" + juce::String(maxDiff, 5)
+                + " (expect near 0 - Reverse mode must play the region backward)");
+        }
+    }
+
+    {
         StretchAudioSource eqSrc;
         eqSrc.setBuffer(loaded.buffer, loaded.sourceSampleRate);
         eqSrc.setLinked(true);

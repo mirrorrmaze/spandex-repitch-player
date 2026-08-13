@@ -57,6 +57,9 @@ public:
     void setLooping(bool shouldLoop) { stretchSource.setLooping(shouldLoop); }
     bool isLooping() const { return stretchSource.isLooping(); }
 
+    void setLoopMode(StretchAudioSource::LoopMode mode) { stretchSource.setLoopMode(mode); }
+    StretchAudioSource::LoopMode getLoopMode() const { return stretchSource.getLoopMode(); }
+
     void setLoopInSeconds(double seconds)
     {
         stretchSource.setLoopRegion((juce::int64) (seconds * sourceSampleRateAtLoad), stretchSource.getLoopEnd());

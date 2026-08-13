@@ -90,7 +90,15 @@ public:
     juce::int64 getNextReadPosition() const override;
     juce::int64 getTotalLength() const override;
     bool isLooping() const override { return looping.load(); }
-    void setLooping(bool shouldLoop) override { looping.store(shouldLoop); }
+    // Engaging the loop always (re)starts its forward pass, even in
+    // PingPong/Reverse mode - matches how samplers start a fresh loop
+    // cycle from the top rather than resuming mid-bounce from last time.
+    void setLooping(bool shouldLoop) override
+    {
+        looping.store(shouldLoop);
+        if (shouldLoop)
+            loopGoingForward.store(true);
+    }
 
     // Constrains looping (when isLooping() is true) to [startSample, endSample)
     // instead of the whole track. Pass endSample <= startSample to disable and
@@ -100,9 +108,22 @@ public:
     juce::int64 getLoopEnd() const noexcept { return loopEnd.load(); }
     bool hasLoopRegion() const noexcept { return loopEnd.load() > loopStart.load(); }
 
-    // Length of the fade applied approaching/leaving a loop boundary, to
-    // turn the hard sample discontinuity at the wrap into an inaudible
-    // dip instead of a click. 0 disables it (instant cut, old behaviour).
+    // Ableton Sampler-style loop types (its Sustain Loop Mode: a plain
+    // repeat, "Back and Forth", or a reverse loop). Forward is the classic
+    // wrap-to-start repeat; PingPong alternates direction at each boundary
+    // instead of wrapping, so it never needs a crossfade (the waveform is
+    // already continuous at a direction flip - reading forward through a
+    // point then backward from it has no discontinuity); Reverse plays the
+    // region backward, wrapping end-to-start each cycle the same way
+    // Forward wraps start-to-end.
+    enum class LoopMode { Forward, PingPong, Reverse };
+    void setLoopMode(LoopMode mode) { loopMode.store(mode); loopGoingForward.store(mode != LoopMode::Reverse); }
+    LoopMode getLoopMode() const noexcept { return loopMode.load(); }
+
+    // Length of the crossfade blended in at a Forward/Reverse loop wrap, to
+    // turn the hard sample discontinuity into a seamless splice instead of
+    // a click. 0 disables it (instant cut). Unused in PingPong mode, which
+    // has no wrap to smooth over.
     void setLoopCrossfadeSeconds(double seconds) { loopCrossfadeSeconds.store(juce::jlimit(0.0, 1.0, seconds)); }
     double getLoopCrossfadeSeconds() const noexcept { return loopCrossfadeSeconds.load(); }
 
@@ -111,6 +132,20 @@ private:
     void renderRePitch(const juce::AudioSourceChannelInfo& bufferToFill);
     void renderWarped(const juce::AudioSourceChannelInfo& bufferToFill);
     void renderPaulstretch(const juce::AudioSourceChannelInfo& bufferToFill);
+
+    // Fills `count` samples of `dest` from the source buffer for the Warp
+    // path's continuous Forward/Reverse looping: wraps `pos` across the
+    // loop boundary (rather than clamping/stopping there) and blends the
+    // standard loop crossfade in as it crosses, so the stream fed to Rubber
+    // Band never has a discontinuity and the stretcher never needs to reset
+    // at a loop repeat.
+    void fillWarpChunkWrapping(juce::AudioBuffer<float>& dest, int count, juce::int64& pos,
+                                bool forward, juce::int64 regionStart, juce::int64 regionEnd);
+    // Fills `count` samples of `dest` from a fixed starting position with no
+    // wrapping or blending - used for one-shot (non-looping) playback, and
+    // for PingPong mode's per-direction run up to the boundary where it
+    // flips (a direction flip has no discontinuity to crossfade).
+    void fillWarpChunkClamped(juce::AudioBuffer<float>& dest, int count, juce::int64 pos, bool forward);
 
     juce::CriticalSection lock;
     juce::AudioBuffer<float> sourceBuffer;
@@ -123,6 +158,13 @@ private:
     std::atomic<juce::int64> loopStart { 0 };
     std::atomic<juce::int64> loopEnd { -1 };
 
+    std::atomic<LoopMode> loopMode { LoopMode::Forward };
+    // Current playback direction - only meaningful (and mutated mid-stream)
+    // in PingPong mode; Forward/Reverse hold it fixed. Shared across render
+    // paths so switching Link/Warp Mode mid-loop keeps a consistent sense
+    // of direction rather than resetting to Forward each time.
+    std::atomic<bool> loopGoingForward { true };
+
     juce::int64 effectiveLoopStart() const noexcept { return hasLoopRegion() ? loopStart.load() : 0; }
     juce::int64 effectiveLoopEnd() const noexcept
     {
@@ -131,26 +173,58 @@ private:
 
     std::atomic<double> loopCrossfadeSeconds { 0.02 };
 
-    // Gain envelope for the loop crossfade: ramps 0->1 over the first
-    // loopCrossfadeSeconds after regionStart, 1->0 over the last
-    // loopCrossfadeSeconds before regionEnd, 1 elsewhere. pos/regionStart/
-    // regionEnd are all in source-domain samples. Applied in all three
-    // render paths, though only renderRePitch can apply it exactly
-    // sample-by-sample - the warped/Paulstretch paths approximate it at
-    // chunk/block granularity since their output doesn't map 1:1 to a
-    // source sample position the way direct playback does; still enough
-    // to turn the loop-point discontinuity into a brief dip instead of a
-    // hard click.
-    float loopFadeGain(double pos, double regionStart, double regionEnd) const
+    // Direction-agnostic linear-interpolated read from the raw source
+    // buffer; silence outside [0, sourceBuffer.getNumSamples()).
+    float readSourceSample(int channel, double pos) const
     {
-        const double xfade = loopCrossfadeSeconds.load() * sourceSampleRate;
-        if (xfade <= 0.0)
-            return 1.0f;
-        if (pos < regionStart + xfade)
-            return (float) juce::jlimit(0.0, 1.0, (pos - regionStart) / xfade);
-        if (pos > regionEnd - xfade)
-            return (float) juce::jlimit(0.0, 1.0, (regionEnd - pos) / xfade);
-        return 1.0f;
+        const int total = sourceBuffer.getNumSamples();
+        if (pos < 0.0 || pos >= (double) total)
+            return 0.0f;
+        const int idx0 = (int) pos;
+        const float frac = (float) (pos - (double) idx0);
+        const float s0 = sourceBuffer.getSample(channel, idx0);
+        const float s1 = sourceBuffer.getSample(channel, juce::jmin(idx0 + 1, total - 1));
+        return s0 + frac * (s1 - s0);
+    }
+
+    // True crossfade at a Forward/Reverse loop wrap: "crossfades the loop
+    // with itself" the way sampler loop crossfades typically work - blends
+    // the loop's own boundary content with material from just outside the
+    // loop region (the "postroll" just past regionEnd for a Forward wrap,
+    // the "preroll" just before regionStart for a Reverse wrap), so the
+    // splice is seamless instead of the old approach of ducking the volume
+    // to silence and back at every repeat. Falls back to a plain read
+    // outside the crossfade zone, or if there isn't enough pre/post-roll
+    // material past the region's edge to draw from (e.g. the loop end sits
+    // at the very end of the file). PingPong never calls this - a direction
+    // flip has no discontinuity to smooth over in the first place.
+    float loopCrossfadeSample(int channel, double pos, double regionStart, double regionEnd, bool forwardWrap) const
+    {
+        const int total = sourceBuffer.getNumSamples();
+        double xfade = juce::jmin(loopCrossfadeSeconds.load() * sourceSampleRate, (regionEnd - regionStart) * 0.5);
+
+        if (forwardWrap)
+        {
+            xfade = juce::jmin(xfade, (double) total - regionEnd);
+            if (xfade <= 0.0 || pos < regionStart || pos >= regionStart + xfade)
+                return readSourceSample(channel, pos);
+            const double t = (pos - regionStart) / xfade;
+            const float head = readSourceSample(channel, pos);
+            const float postroll = readSourceSample(channel, regionEnd + (pos - regionStart));
+            return head * (float) std::sin(t * juce::MathConstants<double>::halfPi)
+                 + postroll * (float) std::cos(t * juce::MathConstants<double>::halfPi);
+        }
+        else
+        {
+            xfade = juce::jmin(xfade, regionStart);
+            if (xfade <= 0.0 || pos > regionEnd || pos <= regionEnd - xfade)
+                return readSourceSample(channel, pos);
+            const double t = (regionEnd - pos) / xfade;
+            const float head = readSourceSample(channel, pos);
+            const float preroll = readSourceSample(channel, regionStart - (regionEnd - pos));
+            return head * (float) std::sin(t * juce::MathConstants<double>::halfPi)
+                 + preroll * (float) std::cos(t * juce::MathConstants<double>::halfPi);
+        }
     }
 
     std::atomic<double> pitchSemitones { 0.0 };

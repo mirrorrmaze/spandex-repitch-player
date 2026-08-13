@@ -10,7 +10,8 @@ built-in FX chain and 8-band EQ before exporting or recording the result in your
 ## Features
 
 - **Waveform playback** with click/drag scrub, scroll-to-zoom, shift-drag to pan, and a
-  loop region (Loop In/Out) with an adjustable crossfade to keep the loop point click-free.
+  loop region (Loop In/Out) with a Sampler-style Loop Mode (Forward/Ping-Pong/Reverse) and a
+  true crossfade at the loop point, not just a click-avoiding dip.
 - **Pitch/Speed control**, either **Link (Re-Pitch)** (speed and pitch move together, like a
   turntable pitch fader) or independent via a selectable **Warp Mode** -- Beats (percussive),
   Tones (monophonic), Texture (pads/ambient), or Complex/Complex Pro (full mix).
@@ -69,11 +70,20 @@ different transient-detector/window/formant preset per mode (see
 `StretchAudioSource::optionsForWarpMode`) approximating Ableton's Beats/Tones/Texture/Complex
 character.
 
-The loop region's crossfade is a gain envelope computed from position relative to the loop
-boundaries -- exact per-sample in Re-Pitch mode, approximated at chunk/block granularity in the
-Warp path (its output doesn't map 1:1 to a source-sample position the way direct playback does,
-so it's a close approximation rather than sample-accurate, but still enough to turn a hard
-discontinuity into an inaudible dip).
+Looping supports three Sampler-style Loop Modes -- Forward (plain repeat), Ping-Pong (alternates
+direction at each boundary instead of wrapping, so there's no discontinuity to smooth over: reading
+forward through a point then backward from it is already seamless), and Reverse (plays the region
+backward, wrapping start-to-end the same way Forward wraps end-to-start). The crossfade at a
+Forward/Reverse wrap is a true two-stream blend -- the loop's own boundary content mixed with
+material from just outside the region (the "postroll" past the loop-out point for Forward, the
+"preroll" before the loop-in point for Reverse), the way sampler loop crossfades typically work --
+rather than the simpler approach of ducking the volume to silence and back at every repeat, which
+leaves an audible dip on sustained/looping material. It's exact per-sample in Re-Pitch mode, and in
+the Warp path the source audio fed to Rubber Band is pre-blended across the wrap so the stretcher
+never sees a discontinuity there either (no per-loop reset needed, unlike a Ping-Pong direction
+flip, which Rubber Band can't reverse mid-stream without one). Paulstretch keeps a simpler
+equal-power duck instead, since its own analysis window is already far wider than a typical
+crossfade and would smear across the seam regardless.
 
 The Granular Delay reads a stream of short, randomly-spawned, Hann-windowed grains back from a
 delay history buffer, each with its own pitch/pan jitter -- normalized by expected overlap

@@ -17,6 +17,9 @@ public:
     juce::TextButton loopInButton { "Loop In" };
     juce::TextButton loopOutButton { "Loop Out" };
     juce::ToggleButton loopToggle { "Loop" };
+    // Ableton Sampler-style Sustain Loop Mode: Forward (plain repeat),
+    // Ping-Pong ("Back and Forth"), Reverse.
+    juce::ComboBox loopModeBox;
     juce::Label crossfadeLabel { {}, "X-fade" };
     juce::Slider crossfadeSlider;
 

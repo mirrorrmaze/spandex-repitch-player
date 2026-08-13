@@ -7,6 +7,12 @@ LoopControls::LoopControls()
     addAndMakeVisible(loopOutButton);
     addAndMakeVisible(loopToggle);
 
+    loopModeBox.addItem("Forward", 1);
+    loopModeBox.addItem("Ping-Pong", 2);
+    loopModeBox.addItem("Reverse", 3);
+    loopModeBox.setSelectedId(1, juce::dontSendNotification);
+    addAndMakeVisible(loopModeBox);
+
     crossfadeLabel.setJustificationType(juce::Justification::centredRight);
     crossfadeLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
     addAndMakeVisible(crossfadeLabel);
@@ -29,6 +35,7 @@ void LoopControls::resized()
     fb.items.add(juce::FlexItem(loopInButton).withWidth(74).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(loopOutButton).withWidth(74).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(loopToggle).withWidth(56).withHeight(28).withMargin(2));
+    fb.items.add(juce::FlexItem(loopModeBox).withWidth(98).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(crossfadeLabel).withWidth(46).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(crossfadeSlider).withWidth(110).withHeight(28).withMargin(2));
     fb.performLayout(bounds);
