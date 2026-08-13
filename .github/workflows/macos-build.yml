@@ -1,0 +1,56 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-macos:
+    # macos-14+ runners are Apple Silicon (arm64) - matches modern Macs,
+    # which is what this is actually meant to be tested on.
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      # mp3lame isn't in JUCE or Rubber Band - built from source via vcpkg,
+      # same as the Windows build, just with a macOS triplet instead of
+      # x64-windows-static-md. Not vendored in the repo (see .gitignore) -
+      # bootstrapped fresh on the runner each time.
+      - name: Bootstrap vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git tools/vcpkg
+          ./tools/vcpkg/bootstrap-vcpkg.sh
+
+      - name: Install mp3lame (vcpkg, arm64-osx)
+        run: ./tools/vcpkg/vcpkg install mp3lame --triplet arm64-osx
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=arm64-osx
+
+      - name: Build
+        run: cmake --build build --config Release -j4
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPANDEX-macOS-arm64-VST3
+          path: build/SPANDEX_artefacts/Release/VST3/SPANDEX.vst3
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPANDEX-macOS-arm64-Standalone
+          path: build/SPANDEX_artefacts/Release/Standalone/SPANDEX.app
