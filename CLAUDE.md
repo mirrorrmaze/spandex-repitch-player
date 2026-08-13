@@ -49,10 +49,13 @@ primary way to verify DSP/logic changes in this project** - add a new assertion 
   artifact, or use `gh release upload v0.1.0-macos-test <path> --clobber` to refresh the existing
   GitHub Release asset at that tag.
 - **Distribution**: finished installers (both platforms) get copied to
-  `D:\Dropbox\01 Main\06 Devices\VST PROJECT ALPHA INSTALLERS` - the user's standing location for
-  installers they hand to friends for testing (also holds MultibandConvolver's, a sibling
-  project's, Windows installer). Keep filenames there as `SPANDEX-Setup-Windows.exe` /
-  `SPANDEX-Installer-macOS-arm64.pkg` so repeat drops overwrite cleanly.
+  `D:\Dropbox\01 Main\06 Devices\VST PROJECT ALPHA INSTALLERS\SPANDEX` - the user's standing
+  location for installers they hand to friends for testing (the parent `VST PROJECT ALPHA
+  INSTALLERS` folder also holds MultibandConvolver's, a sibling project's, Windows installer
+  directly, one subfolder per product). Keep filenames there as `SPANDEX-Setup-Windows.exe` /
+  `SPANDEX-Installer-macOS-arm64.pkg` so repeat drops overwrite cleanly. That folder also holds a
+  brief `README.txt` for testers (what SPANDEX is, install steps per platform, quick-start usage,
+  what feedback is useful) - update it when install steps or major features change.
 
 ## Architecture
 
