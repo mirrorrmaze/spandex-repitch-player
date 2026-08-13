@@ -5,6 +5,7 @@
 #include "Audio/SmudgeProcessor.h"
 #include "Audio/GranularDelay.h"
 #include "Audio/FreqShifter.h"
+#include "Audio/LossyProcessor.h"
 #include "Export/ExportEngine.h"
 
 namespace
@@ -600,6 +601,70 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
             + " feedback0.9Rms=" + juce::String(rmsWith, 5)
             + " anyNonFinite=" + juce::String((int) anyNonFinite)
             + " (expect feedback0.9 clearly different/louder, and anyNonFinite=0 - bounded even maxed)");
+    }
+
+    {
+        // Lossy (bitcrusher/downsampler): mix=0 must be an exact bypass
+        // (not just "close", since the dry/wet blend at mix=0 is a literal
+        // 100% dry weight with no crushing contribution at all). At the
+        // transparent end of its range (16 bits, a target rate at/above
+        // Nyquist so every sample is "fresh") it should track the input
+        // closely. At the extreme end (1 bit, 200Hz hold rate) it should
+        // read as clearly, measurably different - the entire point of the
+        // effect - while staying bounded.
+        const double sr = 44100.0;
+        const int totalSamples = (int) (0.5 * sr);
+        std::vector<float> in((size_t) totalSamples), out((size_t) totalSamples);
+        for (int i = 0; i < totalSamples; ++i)
+            in[(size_t) i] = 0.4f * std::sin(2.0f * juce::MathConstants<float>::pi * 440.0f * (float) i / (float) sr);
+
+        LossyProcessor lossy;
+        lossy.prepare(sr);
+
+        lossy.setMix(0.0f);
+        lossy.process(in.data(), out.data(), totalSamples);
+        float maxDiffAtMix0 = 0.0f;
+        for (int i = 0; i < totalSamples; ++i)
+            maxDiffAtMix0 = juce::jmax(maxDiffAtMix0, std::abs(out[(size_t) i] - in[(size_t) i]));
+        juce::Logger::writeToLog("lossytest: mix0 maxDiffFromDry=" + juce::String(maxDiffAtMix0, 6)
+            + " (expect ~0 - mix=0 must be an exact bypass)");
+
+        lossy.reset();
+        lossy.setMix(1.0f);
+        lossy.setBits(16.0f);
+        lossy.setRateHz(48000.0f);
+        std::fill(out.begin(), out.end(), 0.0f);
+        lossy.process(in.data(), out.data(), totalSamples);
+        double sumSqDiffTransparent = 0.0;
+        for (int i = 0; i < totalSamples; ++i)
+        {
+            const double d = (double) out[(size_t) i] - (double) in[(size_t) i];
+            sumSqDiffTransparent += d * d;
+        }
+        const float transparentDiffRms = (float) std::sqrt(sumSqDiffTransparent / (double) totalSamples);
+        juce::Logger::writeToLog("lossytest: transparent(16bit/48kHz) diffRms=" + juce::String(transparentDiffRms, 5)
+            + " (expect small relative to the 0.4-amplitude tone - close to the dry signal)");
+
+        lossy.reset();
+        lossy.setBits(1.0f);
+        lossy.setRateHz(200.0f);
+        std::fill(out.begin(), out.end(), 0.0f);
+        lossy.process(in.data(), out.data(), totalSamples);
+        double sumSqDiffExtreme = 0.0;
+        bool anyNonFinite = false;
+        float maxAbsExtreme = 0.0f;
+        for (int i = 0; i < totalSamples; ++i)
+        {
+            const double d = (double) out[(size_t) i] - (double) in[(size_t) i];
+            sumSqDiffExtreme += d * d;
+            if (!std::isfinite(out[(size_t) i]))
+                anyNonFinite = true;
+            maxAbsExtreme = juce::jmax(maxAbsExtreme, std::abs(out[(size_t) i]));
+        }
+        const float extremeDiffRms = (float) std::sqrt(sumSqDiffExtreme / (double) totalSamples);
+        juce::Logger::writeToLog("lossytest: extreme(1bit/200Hz) diffRms=" + juce::String(extremeDiffRms, 5)
+            + " maxAbsSample=" + juce::String(maxAbsExtreme, 4) + " anyNonFinite=" + juce::String((int) anyNonFinite)
+            + " (expect diffRms clearly larger than the transparent case above, bounded, anyNonFinite=0)");
     }
 
     {

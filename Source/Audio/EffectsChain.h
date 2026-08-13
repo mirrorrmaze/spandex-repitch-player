@@ -5,6 +5,7 @@
 #include "SmudgeProcessor.h"
 #include "GranularDelay.h"
 #include "FreqShifter.h"
+#include "LossyProcessor.h"
 
 // Sits between StretchAudioSource and the device output: an 8-band
 // parametric EQ (Ableton EQ Eight / FabFilter Pro-Q style band types), a
@@ -67,6 +68,18 @@ public:
     float getSmudgeRateMs() const { return smudgeRateMs.load(); }
     void setSmudgeFeedback(float feedback01);
     float getSmudgeFeedback() const { return smudgeFeedback.load(); }
+
+    // Lossy (bitcrusher/downsampler lo-fi degradation)
+    void setLossyEnabled(bool e) { lossyEnabled.store(e); }
+    bool isLossyEnabled() const { return lossyEnabled.load(); }
+    void setLossyBits(float bitsIn) { lossyBits.store(juce::jlimit(1.0f, 16.0f, bitsIn)); lossyL.setBits(bitsIn); lossyR.setBits(bitsIn); }
+    float getLossyBits() const { return lossyBits.load(); }
+    void setLossyRateHz(float hz) { lossyRateHz.store(juce::jlimit(200.0f, 48000.0f, hz)); lossyL.setRateHz(hz); lossyR.setRateHz(hz); }
+    float getLossyRateHz() const { return lossyRateHz.load(); }
+    void setLossyDriveDb(float db) { lossyDriveDb.store(juce::jlimit(0.0f, 24.0f, db)); lossyL.setDriveDb(db); lossyR.setDriveDb(db); }
+    float getLossyDriveDb() const { return lossyDriveDb.load(); }
+    void setLossyMix(float mix01) { lossyMix.store(juce::jlimit(0.0f, 1.0f, mix01)); lossyL.setMix(mix01); lossyR.setMix(mix01); }
+    float getLossyMix() const { return lossyMix.load(); }
 
     // Granular delay (Ableton "Granular Mirror Maze" style)
     void setDelayEnabled(bool e) { delayEnabled.store(e); }
@@ -175,6 +188,15 @@ private:
     SmudgeProcessor smudgeL, smudgeR;
     std::vector<float> smudgeScratch;
     juce::SmoothedValue<float> smudgeEnabledGain { 0.0f };
+
+    std::atomic<bool> lossyEnabled { false };
+    std::atomic<float> lossyBits { 8.0f };
+    std::atomic<float> lossyRateHz { 4000.0f };
+    std::atomic<float> lossyDriveDb { 0.0f };
+    std::atomic<float> lossyMix { 1.0f };
+    LossyProcessor lossyL, lossyR;
+    std::vector<float> lossyScratch;
+    juce::SmoothedValue<float> lossyEnabledGain { 0.0f };
 
     std::atomic<bool> delayEnabled { false };
     GranularDelay granularDelay;

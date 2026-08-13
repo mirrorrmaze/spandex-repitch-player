@@ -26,7 +26,7 @@ private:
 
     EffectsChain& fx;
 
-    juce::Rectangle<int> reverbCard, delayCard, shifterCard, smudgeCard, gainCard;
+    juce::Rectangle<int> reverbCard, delayCard, shifterCard, smudgeCard, lossyCard, gainCard;
 
     juce::Label reverbTitle { {}, "Reverb" };
     juce::ToggleButton reverbEnable { "On" };
@@ -67,6 +67,13 @@ private:
     // sounded like distinct steps rather than one clean change. Only the
     // value from the last drag tick within the debounce window is applied.
     float pendingSmudgeRateMs = 0.0f;
+
+    juce::Label lossyTitle { {}, "Lossy" };
+    juce::ToggleButton lossyEnable { "On" };
+    LabeledKnob lossyBits { "Bits" };
+    LabeledKnob lossyRate { "Rate (Hz)" };
+    LabeledKnob lossyDrive { "Drive (dB)" };
+    LabeledKnob lossyMix { "Mix" };
 
     juce::Label gainTitle { {}, "Gain" };
     LabeledKnob inputGain { "Input (dB)" };

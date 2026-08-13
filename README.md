@@ -23,8 +23,9 @@ built-in FX chain and 8-band EQ before exporting or recording the result in your
 ![SPANDEX FX tab](docs/screenshot-fx.png)
 
 **FX chain**: Reverb, Granular Delay, Frequency Shifter/Ring Modulator, Smudge (a spectral
-freeze/smear effect), and a Drive/Compression bus stage (OTT-style aggressive compressor
-blended in via a dry/wet knob, plus tanh saturation).
+freeze/smear effect), Lossy (a bit-depth/sample-rate reducing bitcrusher for lo-fi digital
+degradation), and a Drive/Compression bus stage (OTT-style aggressive compressor blended in via
+a dry/wet knob, plus tanh saturation).
 
 ![SPANDEX EQ tab](docs/screenshot-eq.png)
 
@@ -48,8 +49,8 @@ build runs via GitHub Actions on every push to `main` (see `.github/workflows/ma
    repeat that region -- raise **X-fade** if you hear a click at the loop point.
 3. **Pitch**/**Speed**: toggle **Link (Re-Pitch)** for turntable-style linked control, or leave it
    unlinked and pick a **Warp Mode** for independent pitch/time.
-4. **FX tab**: dial in Reverb, Granular Delay, Frequency Shifter, and Smudge (each has its own
-   on/off toggle), plus Input/Output trim and Drive/Compression on the Gain card.
+4. **FX tab**: dial in Reverb, Granular Delay, Frequency Shifter, Smudge, and Lossy (each has its
+   own on/off toggle), plus Input/Output trim and Drive/Compression on the Gain card.
 5. **EQ tab**: drag a band's node on the graph to set frequency/gain, scroll on a node for Q, or
    use the strip below for exact values.
 6. **Export** (Standalone): pick a format and click Export... to render offline at full quality.
@@ -85,7 +86,13 @@ Drive/Compression is deliberately *not* a gentle compressor with a knob that sca
 ratio/makeup -- it's a fixed aggressive compressor (low threshold, high ratio, fast attack/
 release) blended against the dry signal by the knob, the way OTT's own "Depth" control works,
 so it reads as clearly audible as soon as it's dialed in rather than staying subtle throughout
-its range.
+its range. Lossy is a straightforward sample-and-hold decimator (holds each sample for
+`sourceRate/targetRate` input samples, aliasing and stair-stepping the signal) stacked with a
+symmetric bit-depth quantizer (`round(x * 2^(bits-1)) / 2^(bits-1)`) and an optional pre-gain
+drive stage into the quantizer for a harder crunch; Mix at 0 is an exact bypass, and the drive
+stage is skipped entirely at 0dB rather than always running with unity gain, so the clean end of
+its range (16 bits, a target rate at/above the audio sample rate) is genuinely transparent rather
+than quietly shaving level off everything by default.
 
 ![SPANDEX FX tab](docs/screenshot-fx.png)
 
@@ -125,7 +132,7 @@ To build the Windows installer, install [Inno Setup](https://jrsoftware.org/isin
 ```
 Source/
   Audio/               StretchAudioSource, EffectsChain, per-effect DSP (GranularDelay,
-                        SmudgeProcessor, FreqShifter), AudioEngine, AudioFileLoader
+                        SmudgeProcessor, FreqShifter, LossyProcessor), AudioEngine, AudioFileLoader
   Export/               offline render pipeline (ExportEngine)
   UI/                    waveform, transport/loop/pitch/speed/warp controls, FX/EQ panels,
                           AppLookAndFeel + Theme registry

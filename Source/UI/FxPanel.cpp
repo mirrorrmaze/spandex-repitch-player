@@ -157,6 +157,34 @@ FxPanel::FxPanel(EffectsChain& chain)
     smudgeFeedback.slider.onValueChange = [this] { fx.setSmudgeFeedback((float) smudgeFeedback.slider.getValue()); };
     addAndMakeVisible(smudgeFeedback);
 
+    styleTitle(lossyTitle);
+    addAndMakeVisible(lossyTitle);
+
+    lossyEnable.onClick = [this] { fx.setLossyEnabled(lossyEnable.getToggleState()); };
+    addAndMakeVisible(lossyEnable);
+
+    lossyBits.slider.setRange(1.0, 16.0, 0.1);
+    lossyBits.slider.setDoubleClickReturnValue(true, 8.0);
+    lossyBits.slider.onValueChange = [this] { fx.setLossyBits((float) lossyBits.slider.getValue()); };
+    addAndMakeVisible(lossyBits);
+
+    lossyRate.slider.setRange(200.0, 48000.0, 1.0);
+    lossyRate.slider.setSkewFactorFromMidPoint(4000.0);
+    lossyRate.slider.setDoubleClickReturnValue(true, 4000.0);
+    lossyRate.slider.setTextValueSuffix(" Hz");
+    lossyRate.slider.onValueChange = [this] { fx.setLossyRateHz((float) lossyRate.slider.getValue()); };
+    addAndMakeVisible(lossyRate);
+
+    lossyDrive.slider.setRange(0.0, 24.0, 0.1);
+    lossyDrive.slider.setDoubleClickReturnValue(true, 0.0);
+    lossyDrive.slider.onValueChange = [this] { fx.setLossyDriveDb((float) lossyDrive.slider.getValue()); };
+    addAndMakeVisible(lossyDrive);
+
+    lossyMix.slider.setRange(0.0, 1.0, 0.001);
+    lossyMix.slider.setDoubleClickReturnValue(true, 1.0);
+    lossyMix.slider.onValueChange = [this] { fx.setLossyMix((float) lossyMix.slider.getValue()); };
+    addAndMakeVisible(lossyMix);
+
     styleTitle(gainTitle);
     addAndMakeVisible(gainTitle);
 
@@ -221,6 +249,12 @@ void FxPanel::refreshFromEngine()
     smudgeRate.slider.setValue(fx.getSmudgeRateMs(), juce::dontSendNotification);
     smudgeFeedback.slider.setValue(fx.getSmudgeFeedback(), juce::dontSendNotification);
 
+    lossyEnable.setToggleState(fx.isLossyEnabled(), juce::dontSendNotification);
+    lossyBits.slider.setValue(fx.getLossyBits(), juce::dontSendNotification);
+    lossyRate.slider.setValue(fx.getLossyRateHz(), juce::dontSendNotification);
+    lossyDrive.slider.setValue(fx.getLossyDriveDb(), juce::dontSendNotification);
+    lossyMix.slider.setValue(fx.getLossyMix(), juce::dontSendNotification);
+
     inputGain.slider.setValue(fx.getInputGainDb(), juce::dontSendNotification);
     outputGain.slider.setValue(fx.getOutputGainDb(), juce::dontSendNotification);
     driveKnob.slider.setValue(fx.getDriveDb(), juce::dontSendNotification);
@@ -231,7 +265,7 @@ void FxPanel::paint(juce::Graphics& g)
 {
     g.fillAll(AppLookAndFeel::bg);
 
-    for (auto* card : { &reverbCard, &delayCard, &shifterCard, &smudgeCard, &gainCard })
+    for (auto* card : { &reverbCard, &delayCard, &shifterCard, &smudgeCard, &lossyCard, &gainCard })
         MatrixEffects::drawCardFrame(g, *card);
 
     MatrixEffects::drawScanlines(g, getLocalBounds());
@@ -298,7 +332,15 @@ void FxPanel::resized()
     topRow.removeFromLeft(gap);
     shifterCard = topRow;
 
-    smudgeCard = bottomRow.removeFromLeft(bottomRow.getWidth() / 2);
+    // Same weighted-by-knob-count approach as the top row - Smudge (3),
+    // Lossy (4), and Gain (4) split unevenly rather than a flat thirds,
+    // so none of them gets starved below its own knobs' minimum width.
+    constexpr int smudgeWeight = 3, lossyWeight = 4, gainWeight = 4;
+    constexpr int bottomTotalWeight = smudgeWeight + lossyWeight + gainWeight;
+    const int bottomAvailable = bottomRow.getWidth() - 2 * gap;
+    smudgeCard = bottomRow.removeFromLeft(bottomAvailable * smudgeWeight / bottomTotalWeight);
+    bottomRow.removeFromLeft(gap);
+    lossyCard = bottomRow.removeFromLeft(bottomAvailable * lossyWeight / bottomTotalWeight);
     bottomRow.removeFromLeft(gap);
     gainCard = bottomRow;
 
@@ -308,5 +350,6 @@ void FxPanel::resized()
     layoutSection(shifterCard, shifterTitle, &shifterEnable,
                   { &shifterCoarse, &shifterFine, &shifterSpread, &shifterFeedback, &shifterMix }, &shifterModeBox);
     layoutSection(smudgeCard, smudgeTitle, &smudgeEnable, { &smudgeAmount, &smudgeRate, &smudgeFeedback });
+    layoutSection(lossyCard, lossyTitle, &lossyEnable, { &lossyBits, &lossyRate, &lossyDrive, &lossyMix });
     layoutSection(gainCard, gainTitle, nullptr, { &inputGain, &outputGain, &driveKnob, &compKnob });
 }

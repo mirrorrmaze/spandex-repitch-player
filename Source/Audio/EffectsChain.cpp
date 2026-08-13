@@ -87,6 +87,13 @@ void EffectsChain::prepareToPlay(int samplesPerBlockExpected, double newSampleRa
     smudgeEnabledGain.reset(sampleRate, enabledRampSeconds);
     smudgeEnabledGain.setCurrentAndTargetValue(smudgeEnabled.load() ? 1.0f : 0.0f);
 
+    lossyL.prepare(sampleRate);
+    lossyR.prepare(sampleRate);
+    lossyL.reset();
+    lossyR.reset();
+    lossyEnabledGain.reset(sampleRate, enabledRampSeconds);
+    lossyEnabledGain.setCurrentAndTargetValue(lossyEnabled.load() ? 1.0f : 0.0f);
+
     compEnvelopeDb = 0.0f;
     compRmsEnvelope = 0.0f;
 }
@@ -173,8 +180,11 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     // left "off" for a while went stale (e.g. the reverb tank frozen mid-
     // decay) - re-enabling it then flooded the ramp with a burst of stale,
     // uncorrelated energy, which is exactly the residual click a self-test
-    // caught even after adding the gain ramp. So these three always run,
+    // caught even after adding the gain ramp. So these always run,
     // unconditionally, and only the output blend is gated by the ramp.
+    // Lossy's own state (a phase accumulator and one held sample) is far
+    // more trivial than the other three's, but it always runs here too for
+    // the same reasoning and to keep the pattern consistent.
     {
         smudgeEnabledGain.setTargetValue(smudgeEnabled.load() ? 1.0f : 0.0f);
         const int smudgeCh = juce::jmin(2, numCh);
@@ -191,6 +201,24 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         }
 
         blendWithGain(smudgeEnabledGain);
+    }
+
+    {
+        lossyEnabledGain.setTargetValue(lossyEnabled.load() ? 1.0f : 0.0f);
+        const int lossyCh = juce::jmin(2, numCh);
+        if ((int) lossyScratch.size() < n)
+            lossyScratch.resize((size_t) n);
+        captureDry();
+
+        for (int ch = 0; ch < lossyCh; ++ch)
+        {
+            auto* data = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
+            auto& proc = (ch == 0) ? lossyL : lossyR;
+            proc.process(data, lossyScratch.data(), n);
+            std::copy(lossyScratch.data(), lossyScratch.data() + n, data);
+        }
+
+        blendWithGain(lossyEnabledGain);
     }
 
     {
