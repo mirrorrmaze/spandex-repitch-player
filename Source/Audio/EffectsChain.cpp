@@ -88,6 +88,7 @@ void EffectsChain::prepareToPlay(int samplesPerBlockExpected, double newSampleRa
     smudgeEnabledGain.setCurrentAndTargetValue(smudgeEnabled.load() ? 1.0f : 0.0f);
 
     compEnvelopeDb = 0.0f;
+    compRmsEnvelope = 0.0f;
 }
 
 void EffectsChain::releaseResources()
@@ -252,24 +253,35 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         // Bus glue stage: an always-aggressive compressor (fixed threshold/
         // ratio/attack/release - it doesn't get gentler as the knob turns
         // down) blended against the dry signal by the Compression knob,
-        // the way Xfer OTT's own "Depth" control works - rather than a
-        // knob that scales ratio/makeup and stays subtle throughout, this
-        // makes the effect obviously audible as soon as it's dialled in at
-        // all. Followed by a tanh drive/saturation waveshaper. Applied to
-        // the fully mixed signal right before the final output trim.
-        // Skipped entirely when both controls are at their default/off
-        // position so a plugin instance nobody touches these on costs
-        // nothing extra per sample.
+        // the way Xfer OTT's own "Depth" control works. Two things make
+        // this read as "bite" rather than a barely-there level nudge:
+        // (1) the detector tracks a short RMS-style envelope instead of
+        // the raw instantaneous sample - a peak detector on real material
+        // chases every zero-crossing/wobble faster than the attack time
+        // can react to, which quietly dilutes the *achieved* reduction far
+        // below the on-paper ratio (confirmed the hard way: a continuous
+        // tone barely moved the old instantaneous-peak version at all);
+        // (2) it compresses *upward* as well as downward - quiet material
+        // gets pulled up, not just loud material pulled down - which is
+        // most of what actually gives OTT-style processing its in-your-
+        // face, everything-slammed-to-one-intensity character. Followed by
+        // a tanh drive/saturation waveshaper. Applied to the fully mixed
+        // signal right before the final output trim. Skipped entirely when
+        // both controls are at their default/off position so a plugin
+        // instance nobody touches these on costs nothing extra per sample.
         const float driveDbNow = driveDb.load();
         const float compAmt = compAmount.load();
 
         if (driveDbNow > 0.001f || compAmt > 0.001f)
         {
-            constexpr float threshDb = -30.0f;
-            constexpr float ratio = 15.0f;
-            constexpr float makeupDb = 10.0f; // fixed - OTT-style "gets louder" side effect
-            const float attackCoeff = (float) std::exp(-1.0 / (0.002 * sampleRate));  // ~2ms - fast, obvious pumping
-            const float releaseCoeff = (float) std::exp(-1.0 / (0.080 * sampleRate)); // ~80ms
+            constexpr float threshDb = -24.0f;
+            constexpr float ratio = 8.0f;          // downward
+            constexpr float upwardRatio = 3.0f;     // gentler - avoids amplifying noise floor too hard
+            constexpr float maxUpwardBoostDb = 10.0f;
+            constexpr float makeupDb = 6.0f;        // fixed extra, on top of the upward lift
+            const float rmsCoeff = (float) std::exp(-1.0 / (0.008 * sampleRate));    // ~8ms loudness window
+            const float attackCoeff = (float) std::exp(-1.0 / (0.003 * sampleRate)); // ~3ms
+            const float releaseCoeff = (float) std::exp(-1.0 / (0.120 * sampleRate)); // ~120ms
             const float makeupGain = juce::Decibels::decibelsToGain(makeupDb);
             const float driveK = juce::Decibels::decibelsToGain(driveDbNow);
             const float driveNorm = driveDbNow > 0.001f && std::tanh(driveK) > 1.0e-6f ? 1.0f / std::tanh(driveK) : 1.0f;
@@ -279,11 +291,18 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
                 float peak = 0.0f;
                 for (int ch = 0; ch < numCh; ++ch)
                     peak = juce::jmax(peak, std::abs(bufferToFill.buffer->getReadPointer(ch, bufferToFill.startSample)[i]));
-                const float peakDbNow = juce::Decibels::gainToDecibels(peak, -100.0f);
+
+                compRmsEnvelope = peak * peak + rmsCoeff * (compRmsEnvelope - peak * peak);
+                const float levelDb = juce::Decibels::gainToDecibels(std::sqrt(juce::jmax(0.0f, compRmsEnvelope)), -100.0f);
 
                 float targetGrDb = 0.0f;
-                if (compAmt > 0.001f && peakDbNow > threshDb)
-                    targetGrDb = (peakDbNow - threshDb) * (1.0f - 1.0f / ratio);
+                if (compAmt > 0.001f)
+                {
+                    if (levelDb > threshDb)
+                        targetGrDb = (levelDb - threshDb) * (1.0f - 1.0f / ratio);
+                    else
+                        targetGrDb = -juce::jmin(maxUpwardBoostDb, (threshDb - levelDb) * (1.0f - 1.0f / upwardRatio));
+                }
 
                 const float coeff = targetGrDb > compEnvelopeDb ? attackCoeff : releaseCoeff;
                 compEnvelopeDb = targetGrDb + coeff * (compEnvelopeDb - targetGrDb);
@@ -293,13 +312,11 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
                 {
                     auto* data = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
                     const float dry = data[i];
-                    // The fixed makeup gain is generous enough to boost
-                    // lightly-reduced (quiet) material well past unity -
-                    // that's deliberate (upward-compression-style loudness
-                    // lift), but needs a safety net so it can't clip; a
-                    // soft tanh ceiling on the wet path only keeps the
-                    // dry/wet blend below from ever exceeding the dry
-                    // signal's own headroom by much.
+                    // grGain can already be > 1 here (upward compression on
+                    // quiet material); the fixed makeup on top of that is
+                    // deliberately generous, so a tanh ceiling on the wet
+                    // path keeps the dry/wet blend below from ever
+                    // exceeding the dry signal's own headroom by much.
                     const float wet = std::tanh(dry * grGain * makeupGain);
                     float s = dry * (1.0f - compAmt) + wet * compAmt;
                     if (driveDbNow > 0.001f)

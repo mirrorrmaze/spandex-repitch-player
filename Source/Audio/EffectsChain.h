@@ -217,9 +217,14 @@ private:
 
     std::atomic<float> driveDb { 0.0f };
     std::atomic<float> compAmount { 0.0f };
-    // Smoothed gain-reduction envelope, in dB (0 = no reduction) - only
-    // touched from the audio thread under `lock`, so a plain float is fine.
+    // Smoothed gain-reduction envelope, in dB (positive = reduction,
+    // negative = upward boost) - only touched from the audio thread under
+    // `lock`, so a plain float is fine.
     float compEnvelopeDb = 0.0f;
+    // Short RMS-style loudness detector (mean-square, not yet sqrt'd) the
+    // compressor reads instead of the instantaneous sample - see the bus
+    // glue stage in getNextAudioBlock() for why.
+    float compRmsEnvelope = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EffectsChain)
 };

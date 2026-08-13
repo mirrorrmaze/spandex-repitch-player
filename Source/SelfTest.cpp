@@ -357,25 +357,73 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
             + " (expect bounded near/below ~1.0, not blowing up past it)");
         fx.setDriveDb(0.0f);
 
-        // Compression now runs at a fixed aggressive setting (OTT-style)
-        // and the knob is purely a dry/wet blend. On a continuous 440Hz
-        // tone the fast (~2ms) attack can't fully track a target that
-        // itself oscillates twice a cycle, so achieved reduction ends up
-        // well under the instantaneous ~20dB target and the fixed +10dB
-        // makeup dominates - net *louder*, not quieter. That's real OTT
-        // character (it's a loudness-maximiser, not a leveller) on this
-        // pathological worst-case input, not a bug - real transient
-        // material (attacks/decays over tens of ms) lets the detector
-        // track properly. So this just checks real per-sample processing
-        // is happening (clearly different from bypass, not a silent no-op)
-        // and stays bounded, rather than asserting a direction.
-        fx.setCompAmount(1.0f);
-        eqSrc.setNextReadPosition(0);
-        const float compPeak = renderPeak(oneSecond);
-        juce::Logger::writeToLog("drivecomptest: maxCompPeak=" + juce::String(compPeak, 4)
-            + " baselinePeak=" + juce::String(baselinePeak, 4)
-            + " (expect clearly different from baselinePeak - not a no-op - and bounded, not blown up)");
-        fx.setCompAmount(0.0f);
+        // Compression runs at a fixed aggressive setting (OTT-style) with
+        // an RMS-style detector and both downward (loud->down) and upward
+        // (quiet->up) gain, and the knob is purely a dry/wet blend. The
+        // concrete complaint that motivated this over the first cut (a
+        // peak-detector, downward-only version) was "doesn't do much" -
+        // the real test of that isn't a level check on a single steady
+        // tone, it's whether the gap between a loud passage and a quiet
+        // one actually shrinks. Build a synthetic loud-then-quiet tone and
+        // check the loud/quiet RMS ratio collapses at full compAmt, and
+        // that the quiet half's own RMS rises (confirming the upward side
+        // is doing real work, not just the loud half getting squashed).
+        {
+            const double sr = loaded.sourceSampleRate;
+            const int halfSamples = (int) (0.5 * sr);
+            juce::AudioBuffer<float> dynBuf(2, halfSamples * 2);
+            for (int i = 0; i < halfSamples; ++i)
+            {
+                const float loud = 0.5f * std::sin(2.0f * juce::MathConstants<float>::pi * 440.0f * (float) i / (float) sr);
+                dynBuf.setSample(0, i, loud);
+                dynBuf.setSample(1, i, loud);
+            }
+            for (int i = 0; i < halfSamples; ++i)
+            {
+                const float quiet = 0.03f * std::sin(2.0f * juce::MathConstants<float>::pi * 440.0f * (float) i / (float) sr);
+                dynBuf.setSample(0, halfSamples + i, quiet);
+                dynBuf.setSample(1, halfSamples + i, quiet);
+            }
+
+            eqSrc.setBuffer(dynBuf, sr);
+            eqSrc.setLinked(true);
+            eqSrc.setPitchSemitones(0.0);
+            eqSrc.play();
+
+            // eqSrc.play() every time: a render that lands exactly on the
+            // buffer's end (as the quiet-half render below does, being the
+            // last halfSamples of an exactly-2*halfSamples buffer) flips
+            // playing() to false internally (see StretchAudioSource::
+            // renderRePitch's non-looping end-of-buffer handling) -
+            // setNextReadPosition() alone doesn't revive it, which
+            // silently zeroed out every render after the first two here.
+            auto rmsOfHalf = [&](bool loudHalf) -> float
+            {
+                eqSrc.setNextReadPosition(loudHalf ? 0 : halfSamples);
+                eqSrc.play();
+                return renderRms(halfSamples);
+            };
+
+            fx.setCompAmount(0.0f);
+            const float bypassLoudRms = rmsOfHalf(true);
+            const float bypassQuietRms = rmsOfHalf(false);
+
+            fx.setCompAmount(1.0f);
+            const float compLoudRms = rmsOfHalf(true);
+            const float compQuietRms = rmsOfHalf(false);
+
+            const float bypassRatio = bypassLoudRms / juce::jmax(1.0e-6f, bypassQuietRms);
+            const float compRatio = compLoudRms / juce::jmax(1.0e-6f, compQuietRms);
+
+            juce::Logger::writeToLog("drivecomptest: dynamicRange bypassRatio=" + juce::String(bypassRatio, 2)
+                + " compRatio=" + juce::String(compRatio, 2)
+                + " quietRms bypass=" + juce::String(bypassQuietRms, 4) + " comp=" + juce::String(compQuietRms, 4)
+                + " (expect compRatio well below bypassRatio - the loud/quiet gap shrinking - and"
+                + " compQuietRms clearly above bypassQuietRms - upward compression actually lifting"
+                + " the quiet half, not just the loud half getting squashed)");
+
+            fx.setCompAmount(0.0f);
+        }
     }
 
     {
