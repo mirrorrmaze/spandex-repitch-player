@@ -13,12 +13,10 @@ built-in FX chain and 8-band EQ before exporting or recording the result in your
   loop region (Loop In/Out) with an adjustable crossfade to keep the loop point click-free.
 - **Pitch/Speed control**, either **Link (Re-Pitch)** (speed and pitch move together, like a
   turntable pitch fader) or independent via a selectable **Warp Mode** -- Beats (percussive),
-  Tones (monophonic), Texture (pads/ambient), Complex/Complex Pro (full mix), or Paulstretch (a
-  real phase-randomizing FFT stretcher for extreme slow-motion/ambient territory).
-- **FX chain**: Reverb, Granular Delay (Ableton "Granular Mirror Maze" style, with a built-in
-  output limiter), Frequency Shifter/Ring Modulator, Smudge (a spectral freeze/smear a la
-  FabFilter Saturn 2), and a Drive/Compression bus stage (OTT-style aggressive compressor blended
-  in via a dry/wet knob, plus tanh saturation).
+  Tones (monophonic), Texture (pads/ambient), or Complex/Complex Pro (full mix).
+- **FX chain**: Reverb, Granular Delay, Frequency Shifter/Ring Modulator, Smudge (a spectral
+  freeze/smear effect), and a Drive/Compression bus stage (OTT-style aggressive compressor
+  blended in via a dry/wet knob, plus tanh saturation).
 - **8-band parametric EQ** (high-pass, low-pass, shelves, bell, notch, band-pass) with a live
   spectrum analyzer drawn behind the curve, auto-normalized to the signal's own peak.
 - **Runtime GUI themes** -- Default, Matrix (phosphor green terminal), and Amber Terminal,
@@ -62,14 +60,13 @@ with linear interpolation -- cheap and exact, at the cost of pitch and speed bei
 together. **Warp modes** feed a `RubberBandStretcher` in real-time streaming mode, with a
 different transient-detector/window/formant preset per mode (see
 `StretchAudioSource::optionsForWarpMode`) approximating Ableton's Beats/Tones/Texture/Complex
-character. **Paulstretch** is a separate hand-rolled FFT phase-randomizing stretcher (not Rubber
-Band) for the very slow end, where a phase vocoder starts to smear/robotize.
+character.
 
 The loop region's crossfade is a gain envelope computed from position relative to the loop
 boundaries -- exact per-sample in Re-Pitch mode, approximated at chunk/block granularity in the
-Warp/Paulstretch paths (their output doesn't map 1:1 to a source-sample position the way direct
-playback does, so it's a close approximation rather than sample-accurate, but still enough to
-turn a hard discontinuity into an inaudible dip).
+Warp path (its output doesn't map 1:1 to a source-sample position the way direct playback does,
+so it's a close approximation rather than sample-accurate, but still enough to turn a hard
+discontinuity into an inaudible dip).
 
 The Granular Delay reads a stream of short, randomly-spawned, Hann-windowed grains back from a
 delay history buffer, each with its own pitch/pan jitter -- normalized by expected overlap
@@ -80,9 +77,9 @@ Smudge is a streaming STFT where each bin's complex value blends with what was t
 size (Rate) mid-stream is sandwiched between a fade-out/fade-in so resizing the FFT doesn't click.
 Drive/Compression is deliberately *not* a gentle compressor with a knob that scales
 ratio/makeup -- it's a fixed aggressive compressor (low threshold, high ratio, fast attack/
-release) blended against the dry signal by the knob, the way Xfer OTT's own "Depth" control
-works, so it reads as clearly audible as soon as it's dialed in rather than staying subtle
-throughout its range.
+release) blended against the dry signal by the knob, the way OTT's own "Depth" control works,
+so it reads as clearly audible as soon as it's dialed in rather than staying subtle throughout
+its range.
 
 Every DSP change is verified through a hidden `--selftest <input.wav> <outputDir>` CLI flag
 (`Source/SelfTest.cpp`) that renders offline under a battery of known settings and logs numeric
@@ -118,7 +115,7 @@ To build the Windows installer, install [Inno Setup](https://jrsoftware.org/isin
 ```
 Source/
   Audio/               StretchAudioSource, EffectsChain, per-effect DSP (GranularDelay,
-                        SmudgeProcessor, FreqShifter, Paulstretch), AudioEngine, AudioFileLoader
+                        SmudgeProcessor, FreqShifter), AudioEngine, AudioFileLoader
   Export/               offline render pipeline (ExportEngine)
   UI/                    waveform, transport/loop/pitch/speed/warp controls, FX/EQ panels,
                           AppLookAndFeel + Theme registry
