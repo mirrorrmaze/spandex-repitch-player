@@ -5,7 +5,7 @@ and stretch it in real time -- either linked "Re-Pitch" (pitch and speed move to
 turntable-style) or independent Warp modes powered by Rubber Band -- then shape it through a
 built-in FX chain and 8-band EQ before exporting or recording the result in your DAW.
 
-![SPANDEX GUI](docs/screenshot.png)
+![SPANDEX Player tab](docs/screenshot-player.png)
 
 ## Features
 
@@ -80,6 +80,10 @@ ratio/makeup -- it's a fixed aggressive compressor (low threshold, high ratio, f
 release) blended against the dry signal by the knob, the way OTT's own "Depth" control works,
 so it reads as clearly audible as soon as it's dialed in rather than staying subtle throughout
 its range.
+
+![SPANDEX FX tab](docs/screenshot-fx.png)
+
+![SPANDEX EQ tab](docs/screenshot-eq.png)
 
 Every DSP change is verified through a hidden `--selftest <input.wav> <outputDir>` CLI flag
 (`Source/SelfTest.cpp`) that renders offline under a battery of known settings and logs numeric
