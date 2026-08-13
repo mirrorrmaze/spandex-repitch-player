@@ -168,17 +168,17 @@ FxPanel::FxPanel(EffectsChain& chain)
     lossyBits.slider.onValueChange = [this] { fx.setLossyBits((float) lossyBits.slider.getValue()); };
     addAndMakeVisible(lossyBits);
 
-    lossyRate.slider.setRange(200.0, 48000.0, 1.0);
-    lossyRate.slider.setSkewFactorFromMidPoint(4000.0);
-    lossyRate.slider.setDoubleClickReturnValue(true, 4000.0);
+    lossyRate.slider.setRange(1.0, 200.0, 0.1);
+    lossyRate.slider.setSkewFactorFromMidPoint(40.0);
+    lossyRate.slider.setDoubleClickReturnValue(true, 40.0);
     lossyRate.slider.setTextValueSuffix(" Hz");
     lossyRate.slider.onValueChange = [this] { fx.setLossyRateHz((float) lossyRate.slider.getValue()); };
     addAndMakeVisible(lossyRate);
 
-    lossyDrive.slider.setRange(0.0, 24.0, 0.1);
-    lossyDrive.slider.setDoubleClickReturnValue(true, 0.0);
-    lossyDrive.slider.onValueChange = [this] { fx.setLossyDriveDb((float) lossyDrive.slider.getValue()); };
-    addAndMakeVisible(lossyDrive);
+    lossyJitter.slider.setRange(0.0, 1.0, 0.001);
+    lossyJitter.slider.setDoubleClickReturnValue(true, 0.3);
+    lossyJitter.slider.onValueChange = [this] { fx.setLossyJitter((float) lossyJitter.slider.getValue()); };
+    addAndMakeVisible(lossyJitter);
 
     lossyMix.slider.setRange(0.0, 1.0, 0.001);
     lossyMix.slider.setDoubleClickReturnValue(true, 1.0);
@@ -252,7 +252,7 @@ void FxPanel::refreshFromEngine()
     lossyEnable.setToggleState(fx.isLossyEnabled(), juce::dontSendNotification);
     lossyBits.slider.setValue(fx.getLossyBits(), juce::dontSendNotification);
     lossyRate.slider.setValue(fx.getLossyRateHz(), juce::dontSendNotification);
-    lossyDrive.slider.setValue(fx.getLossyDriveDb(), juce::dontSendNotification);
+    lossyJitter.slider.setValue(fx.getLossyJitter(), juce::dontSendNotification);
     lossyMix.slider.setValue(fx.getLossyMix(), juce::dontSendNotification);
 
     inputGain.slider.setValue(fx.getInputGainDb(), juce::dontSendNotification);
@@ -350,6 +350,6 @@ void FxPanel::resized()
     layoutSection(shifterCard, shifterTitle, &shifterEnable,
                   { &shifterCoarse, &shifterFine, &shifterSpread, &shifterFeedback, &shifterMix }, &shifterModeBox);
     layoutSection(smudgeCard, smudgeTitle, &smudgeEnable, { &smudgeAmount, &smudgeRate, &smudgeFeedback });
-    layoutSection(lossyCard, lossyTitle, &lossyEnable, { &lossyBits, &lossyRate, &lossyDrive, &lossyMix });
+    layoutSection(lossyCard, lossyTitle, &lossyEnable, { &lossyBits, &lossyRate, &lossyJitter, &lossyMix });
     layoutSection(gainCard, gainTitle, nullptr, { &inputGain, &outputGain, &driveKnob, &compKnob });
 }

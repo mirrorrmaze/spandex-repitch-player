@@ -604,67 +604,110 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
     }
 
     {
-        // Lossy (bitcrusher/downsampler): mix=0 must be an exact bypass
-        // (not just "close", since the dry/wet blend at mix=0 is a literal
-        // 100% dry weight with no crushing contribution at all). At the
-        // transparent end of its range (16 bits, a target rate at/above
-        // Nyquist so every sample is "fresh") it should track the input
-        // closely. At the extreme end (1 bit, 200Hz hold rate) it should
-        // read as clearly, measurably different - the entire point of the
-        // effect - while staying bounded.
+        // Lossy (spectral codec-artifact effect, Goodhertz Lossy style): a
+        // streaming STFT, so - unlike the time-domain bitcrusher this
+        // replaced - output is delayed relative to input by the analysis
+        // window's latency. That makes a per-sample diff against the dry
+        // signal meaningless even when the effect is fully transparent (a
+        // delayed sine looks totally different sample-for-sample despite
+        // being identical in level/content), so these checks compare
+        // settled-region RMS *levels* instead, and separately verify that
+        // Jitter is actually doing something - the ingredient that gives
+        // this a "lost sync" cellphone-codec character, per the user's
+        // direct feedback referencing Goodhertz Lossy.
         const double sr = 44100.0;
-        const int totalSamples = (int) (0.5 * sr);
+        const int totalSamples = (int) (1.0 * sr);
+        const int settleStart = 4096; // past the STFT's startup transient
         std::vector<float> in((size_t) totalSamples), out((size_t) totalSamples);
         for (int i = 0; i < totalSamples; ++i)
             in[(size_t) i] = 0.4f * std::sin(2.0f * juce::MathConstants<float>::pi * 440.0f * (float) i / (float) sr);
 
+        auto settledRms = [&](const std::vector<float>& buf)
+        {
+            double sum = 0.0;
+            for (int i = settleStart; i < totalSamples; ++i)
+                sum += (double) buf[(size_t) i] * buf[(size_t) i];
+            return (float) std::sqrt(sum / (double) (totalSamples - settleStart));
+        };
+        const float dryRms = settledRms(in);
+
         LossyProcessor lossy;
         lossy.prepare(sr);
 
+        // mix=0: spectrum passes through untouched (still delayed by the
+        // STFT, but level should track the dry signal closely).
         lossy.setMix(0.0f);
         lossy.process(in.data(), out.data(), totalSamples);
-        float maxDiffAtMix0 = 0.0f;
-        for (int i = 0; i < totalSamples; ++i)
-            maxDiffAtMix0 = juce::jmax(maxDiffAtMix0, std::abs(out[(size_t) i] - in[(size_t) i]));
-        juce::Logger::writeToLog("lossytest: mix0 maxDiffFromDry=" + juce::String(maxDiffAtMix0, 6)
-            + " (expect ~0 - mix=0 must be an exact bypass)");
+        juce::Logger::writeToLog("lossytest: mix0 dryRms=" + juce::String(dryRms, 5)
+            + " outRms=" + juce::String(settledRms(out), 5)
+            + " (expect outRms close to dryRms - mix=0 is spectrally untouched)");
 
+        // Transparent settings at mix=1: fine-grained (16 bit) quantization
+        // and no jitter should still read close to the dry level even
+        // though the quantize+refresh path is actively running.
         lossy.reset();
         lossy.setMix(1.0f);
         lossy.setBits(16.0f);
-        lossy.setRateHz(48000.0f);
+        lossy.setJitter(0.0f);
+        lossy.setRefreshHz(200.0f);
         std::fill(out.begin(), out.end(), 0.0f);
         lossy.process(in.data(), out.data(), totalSamples);
-        double sumSqDiffTransparent = 0.0;
-        for (int i = 0; i < totalSamples; ++i)
-        {
-            const double d = (double) out[(size_t) i] - (double) in[(size_t) i];
-            sumSqDiffTransparent += d * d;
-        }
-        const float transparentDiffRms = (float) std::sqrt(sumSqDiffTransparent / (double) totalSamples);
-        juce::Logger::writeToLog("lossytest: transparent(16bit/48kHz) diffRms=" + juce::String(transparentDiffRms, 5)
-            + " (expect small relative to the 0.4-amplitude tone - close to the dry signal)");
+        juce::Logger::writeToLog("lossytest: transparent(16bit/jitter0) dryRms=" + juce::String(dryRms, 5)
+            + " outRms=" + juce::String(settledRms(out), 5)
+            + " (expect close to dryRms)");
 
+        // Extreme settings (2 bits, full jitter, slow 2Hz refresh for heavy
+        // hold/smear) - the entire point of the effect - should stay
+        // bounded and finite even under maximal degradation. (1 bit is
+        // skipped here since it rounds this particular tone's magnitude
+        // below the quantizer's halfway threshold to exact silence - a
+        // legitimate extreme-setting outcome, but not a useful signal for
+        // this check.)
         lossy.reset();
-        lossy.setBits(1.0f);
-        lossy.setRateHz(200.0f);
+        lossy.setBits(2.0f);
+        lossy.setJitter(1.0f);
+        lossy.setRefreshHz(2.0f);
         std::fill(out.begin(), out.end(), 0.0f);
         lossy.process(in.data(), out.data(), totalSamples);
-        double sumSqDiffExtreme = 0.0;
         bool anyNonFinite = false;
         float maxAbsExtreme = 0.0f;
         for (int i = 0; i < totalSamples; ++i)
         {
-            const double d = (double) out[(size_t) i] - (double) in[(size_t) i];
-            sumSqDiffExtreme += d * d;
             if (!std::isfinite(out[(size_t) i]))
                 anyNonFinite = true;
             maxAbsExtreme = juce::jmax(maxAbsExtreme, std::abs(out[(size_t) i]));
         }
-        const float extremeDiffRms = (float) std::sqrt(sumSqDiffExtreme / (double) totalSamples);
-        juce::Logger::writeToLog("lossytest: extreme(1bit/200Hz) diffRms=" + juce::String(extremeDiffRms, 5)
+        juce::Logger::writeToLog("lossytest: extreme(2bit/jitter1/refresh2Hz) outRms=" + juce::String(settledRms(out), 5)
             + " maxAbsSample=" + juce::String(maxAbsExtreme, 4) + " anyNonFinite=" + juce::String((int) anyNonFinite)
-            + " (expect diffRms clearly larger than the transparent case above, bounded, anyNonFinite=0)");
+            + " (expect bounded, anyNonFinite=0)");
+
+        // Phase jitter specifically, isolated from magnitude quantization
+        // by holding bits at 16: jitter=1 must measurably decorrelate the
+        // output from an otherwise-identical jitter=0 pass. Both passes
+        // share the same STFT latency/structure, so a direct diff between
+        // them (rather than against the dry signal) is meaningful here.
+        lossy.reset();
+        lossy.setMix(1.0f);
+        lossy.setBits(16.0f);
+        lossy.setJitter(0.0f);
+        lossy.setRefreshHz(40.0f);
+        std::vector<float> outNoJitter((size_t) totalSamples);
+        lossy.process(in.data(), outNoJitter.data(), totalSamples);
+
+        lossy.reset();
+        lossy.setJitter(1.0f);
+        std::vector<float> outFullJitter((size_t) totalSamples);
+        lossy.process(in.data(), outFullJitter.data(), totalSamples);
+
+        double sumSqDiff = 0.0;
+        for (int i = settleStart; i < totalSamples; ++i)
+        {
+            const double d = (double) outFullJitter[(size_t) i] - (double) outNoJitter[(size_t) i];
+            sumSqDiff += d * d;
+        }
+        const float jitterDiffRms = (float) std::sqrt(sumSqDiff / (double) (totalSamples - settleStart));
+        juce::Logger::writeToLog("lossytest: jitter0vs1 diffRms=" + juce::String(jitterDiffRms, 5)
+            + " (expect clearly nonzero - jitter=1 must audibly decorrelate phase from jitter=0 at otherwise-identical settings)");
     }
 
     {

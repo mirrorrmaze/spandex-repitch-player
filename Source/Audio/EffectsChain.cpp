@@ -182,9 +182,10 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     // uncorrelated energy, which is exactly the residual click a self-test
     // caught even after adding the gain ramp. So these always run,
     // unconditionally, and only the output blend is gated by the ramp.
-    // Lossy's own state (a phase accumulator and one held sample) is far
-    // more trivial than the other three's, but it always runs here too for
-    // the same reasoning and to keep the pattern consistent.
+    // Lossy is a streaming STFT with its own held spectral frame, so it
+    // always runs here too for the same reasoning and to keep the pattern
+    // consistent - stopping it mid-hold would go just as stale as the
+    // reverb tank does.
     {
         smudgeEnabledGain.setTargetValue(smudgeEnabled.load() ? 1.0f : 0.0f);
         const int smudgeCh = juce::jmin(2, numCh);

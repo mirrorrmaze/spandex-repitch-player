@@ -23,9 +23,9 @@ built-in FX chain and 8-band EQ before exporting or recording the result in your
 ![SPANDEX FX tab](docs/screenshot-fx.png)
 
 **FX chain**: Reverb, Granular Delay, Frequency Shifter/Ring Modulator, Smudge (a spectral
-freeze/smear effect), Lossy (a bit-depth/sample-rate reducing bitcrusher for lo-fi digital
-degradation), and a Drive/Compression bus stage (OTT-style aggressive compressor blended in via
-a dry/wet knob, plus tanh saturation).
+freeze/smear effect), Lossy (a spectral codec-artifact emulator, Goodhertz Lossy style, for
+"bad cellphone codec" degradation), and a Drive/Compression bus stage (OTT-style aggressive
+compressor blended in via a dry/wet knob, plus tanh saturation).
 
 ![SPANDEX EQ tab](docs/screenshot-eq.png)
 
@@ -86,13 +86,17 @@ Drive/Compression is deliberately *not* a gentle compressor with a knob that sca
 ratio/makeup -- it's a fixed aggressive compressor (low threshold, high ratio, fast attack/
 release) blended against the dry signal by the knob, the way OTT's own "Depth" control works,
 so it reads as clearly audible as soon as it's dialed in rather than staying subtle throughout
-its range. Lossy is a straightforward sample-and-hold decimator (holds each sample for
-`sourceRate/targetRate` input samples, aliasing and stair-stepping the signal) stacked with a
-symmetric bit-depth quantizer (`round(x * 2^(bits-1)) / 2^(bits-1)`) and an optional pre-gain
-drive stage into the quantizer for a harder crunch; Mix at 0 is an exact bypass, and the drive
-stage is skipped entirely at 0dB rather than always running with unity gain, so the clean end of
-its range (16 bits, a target rate at/above the audio sample rate) is genuinely transparent rather
-than quietly shaving level off everything by default.
+its range. Lossy is a streaming STFT (1024-point window, 256-sample hop), not a time-domain
+bitcrusher - each hop's magnitude spectrum is quantized to a `Bits`-controlled number of steps
+(relative to the window's own full-scale reference, not raw FFT units, so the control's meaning
+doesn't depend on window size) and each bin's phase is randomized by `Jitter` * up to +/-pi. That
+quantized/jittered "wet" spectrum only refreshes at the `Rate (Hz)` rate - low rates hold an old
+frame for a smeared, underwater texture, high rates refresh almost every hop for a garbled,
+glitchy one - while the dry side of the `Mix` blend always reads the current hop's actual
+spectrum, so Mix at 0 is a true bypass (still delayed by the STFT's window latency) no matter how
+slow Rate is set. Phase jitter specifically, not just magnitude crunch, is what gives this a
+"lost sync" cellphone-codec character a bitcrusher can't produce - real low-bitrate speech codecs
+lose phase coherence between frames the same way.
 
 ![SPANDEX FX tab](docs/screenshot-fx.png)
 

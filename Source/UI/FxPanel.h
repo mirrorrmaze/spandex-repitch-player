@@ -72,7 +72,7 @@ private:
     juce::ToggleButton lossyEnable { "On" };
     LabeledKnob lossyBits { "Bits" };
     LabeledKnob lossyRate { "Rate (Hz)" };
-    LabeledKnob lossyDrive { "Drive (dB)" };
+    LabeledKnob lossyJitter { "Jitter" };
     LabeledKnob lossyMix { "Mix" };
 
     juce::Label gainTitle { {}, "Gain" };
