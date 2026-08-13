@@ -54,3 +54,25 @@ jobs:
         with:
           name: SPANDEX-macOS-arm64-Standalone
           path: build/SPANDEX_artefacts/Release/Standalone/SPANDEX.app
+
+      # Single unsigned installer .pkg that puts both formats where a user
+      # (or DAW) would expect to find them - no Apple Developer account is
+      # set up for this project, so this isn't notarized; Gatekeeper will
+      # require an explicit "Open Anyway" the first time it runs.
+      - name: Build installer .pkg
+        run: |
+          mkdir -p pkgroot/Applications
+          mkdir -p "pkgroot/Library/Audio/Plug-Ins/VST3"
+          cp -R build/SPANDEX_artefacts/Release/Standalone/SPANDEX.app pkgroot/Applications/
+          cp -R build/SPANDEX_artefacts/Release/VST3/SPANDEX.vst3 "pkgroot/Library/Audio/Plug-Ins/VST3/"
+          pkgbuild --root pkgroot \
+            --identifier com.spandex.app \
+            --version 0.1.0 \
+            --install-location / \
+            SPANDEX-macOS-arm64-Installer.pkg
+
+      - name: Upload installer .pkg
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPANDEX-macOS-arm64-Installer
+          path: SPANDEX-macOS-arm64-Installer.pkg
