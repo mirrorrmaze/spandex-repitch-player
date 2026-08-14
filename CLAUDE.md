@@ -46,13 +46,22 @@ primary way to verify DSP/logic changes in this project** - add a new assertion 
   installer\SPANDEX.iss` (needs a Release build first) - produces `dist/SPANDEX-Setup.exe`.
 - **macOS**: the CI workflow's `Build installer .pkg` step (pkgbuild, unsigned - no Apple
   Developer account set up for this project). Download the `SPANDEX-macOS-arm64-Installer`
-  artifact, or use `gh release upload v0.1.0-macos-test <path> --clobber` to refresh the existing
-  GitHub Release asset at that tag.
+  artifact from the triggering run.
+- **Versioning matters for the in-app update checker** (`Source/UpdateChecker.cpp`): it compares
+  the compiled-in `SPANDEX_VERSION` (from `project(SPANDEX VERSION X.Y.Z)` in `CMakeLists.txt`)
+  against the *latest* GitHub Release's tag. Repeatedly uploading to the same tag (the old
+  `v0.1.0-macos-test` habit) means already-installed copies can never see a future push as
+  newer - there's nowhere higher for the tag to go. So: **every ship that should be detectable
+  as an update bumps `project(SPANDEX VERSION ...)` first, then publishes an actual new,
+  higher-numbered release** (`gh release create vX.Y.Z <windows-exe> <macos-pkg> --notes-file
+  <notes>`), not just `gh release upload ... --clobber` onto an old tag. Matches how
+  Multiband Convolver's own update checker is set up (proper incrementing `vX.Y.Z` releases).
+  The old `v0.1.0-macos-test` tag is left in place as history, not deleted.
 - **Distribution**: finished installers (both platforms) get copied to
   `D:\Dropbox\01 Main\06 Devices\VST PROJECT ALPHA INSTALLERS\SPANDEX` - the user's standing
   location for installers they hand to friends for testing (the parent `VST PROJECT ALPHA
-  INSTALLERS` folder also holds MultibandConvolver's, a sibling project's, Windows installer
-  directly, one subfolder per product). Keep filenames there as `SPANDEX-Setup-Windows.exe` /
+  INSTALLERS` folder holds one subfolder per product - MultibandConvolver's is a sibling
+  project's, at `...\Multiband Convolver`). Keep filenames there as `SPANDEX-Setup-Windows.exe` /
   `SPANDEX-Installer-macOS-arm64.pkg` so repeat drops overwrite cleanly. That folder also holds a
   brief `README.txt` for testers (what SPANDEX is, install steps per platform, quick-start usage,
   what feedback is useful) - update it when install steps or major features change.
