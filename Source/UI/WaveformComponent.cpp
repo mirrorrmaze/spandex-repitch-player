@@ -83,10 +83,14 @@ WaveformComponent::DragTarget WaveformComponent::hitTestMarker(int x) const
         const auto loopOut = getLoopOutSeconds();
         if (loopOut > loopIn)
         {
-            if (std::abs(fx - timeToX(loopIn)) <= tolerance)
+            const auto x1 = timeToX(loopIn);
+            const auto x2 = timeToX(loopOut);
+            if (std::abs(fx - x1) <= tolerance)
                 return DragTarget::LoopIn;
-            if (std::abs(fx - timeToX(loopOut)) <= tolerance)
+            if (std::abs(fx - x2) <= tolerance)
                 return DragTarget::LoopOut;
+            if (fx > x1 && fx < x2)
+                return DragTarget::LoopBody;
         }
     }
 
@@ -202,6 +206,13 @@ void WaveformComponent::mouseDown(const juce::MouseEvent& e)
     }
 
     draggingMarker = hitTestMarker(e.x);
+    if (draggingMarker == DragTarget::LoopBody && getLoopInSeconds && getLoopOutSeconds)
+    {
+        const auto loopIn = getLoopInSeconds();
+        dragLoopWidthSeconds = getLoopOutSeconds() - loopIn;
+        dragGrabTimeOffset = xToTime(e.x) - loopIn;
+        return;
+    }
     if (draggingMarker != DragTarget::None)
         return;
 
@@ -265,6 +276,15 @@ void WaveformComponent::mouseDrag(const juce::MouseEvent& e)
                 }
                 break;
 
+            case DragTarget::LoopBody:
+                if (onDragLoopRegionSeconds)
+                {
+                    const double maxLoopIn = juce::jmax(0.0, length - dragLoopWidthSeconds);
+                    const double newLoopIn = juce::jlimit(0.0, maxLoopIn, t - dragGrabTimeOffset);
+                    onDragLoopRegionSeconds(newLoopIn, newLoopIn + dragLoopWidthSeconds);
+                }
+                break;
+
             default:
                 break;
         }
@@ -284,9 +304,13 @@ void WaveformComponent::mouseUp(const juce::MouseEvent&)
 
 void WaveformComponent::mouseMove(const juce::MouseEvent& e)
 {
-    setMouseCursor(hitTestMarker(e.x) != DragTarget::None
-        ? juce::MouseCursor::LeftRightResizeCursor
-        : juce::MouseCursor::NormalCursor);
+    const auto target = hitTestMarker(e.x);
+    juce::MouseCursor newCursor = juce::MouseCursor::NormalCursor;
+    if (target == DragTarget::LoopBody)
+        newCursor = juce::MouseCursor::DraggingHandCursor;
+    else if (target != DragTarget::None)
+        newCursor = juce::MouseCursor::LeftRightResizeCursor;
+    setMouseCursor(newCursor);
 }
 
 void WaveformComponent::mouseDoubleClick(const juce::MouseEvent&)

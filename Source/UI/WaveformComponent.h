@@ -37,6 +37,10 @@ public:
     std::function<void(double seconds)> onDragLoopOutSeconds;
     std::function<void(double seconds)> onDragTrimStartSeconds;
     std::function<void(double seconds)> onDragTrimEndSeconds;
+    // Fired continuously while the user drags the loop region's interior -
+    // shifts the whole loop (both edges together, width preserved) across
+    // the file rather than resizing it.
+    std::function<void(double newLoopInSeconds, double newLoopOutSeconds)> onDragLoopRegionSeconds;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -61,10 +65,12 @@ private:
     // Which draggable marker (if any) is under a given x - used by both
     // mouseDown (to grab a marker instead of seeking) and mouseMove (to show
     // a resize cursor over one). Trim Start/End are always present (default
-    // to the file's edges); Loop In/Out only count as hit-testable once an
-    // actual loop region exists (matches the Loop In/Out buttons already
-    // being the way a region first gets created).
-    enum class DragTarget { None, LoopIn, LoopOut, TrimStart, TrimEnd };
+    // to the file's edges); Loop In/Out/Body only count as hit-testable once
+    // an actual loop region exists (matches the Loop In/Out buttons already
+    // being the way a region first gets created). LoopBody is anywhere
+    // strictly between the two edges (which take priority within their own
+    // tolerance zone, for resizing) - dragging it shifts the whole region.
+    enum class DragTarget { None, LoopIn, LoopOut, LoopBody, TrimStart, TrimEnd };
     DragTarget hitTestMarker(int x) const;
 
     // Resolves the trim range actually in effect right now: Start defaults
@@ -85,6 +91,11 @@ private:
     double panStartVisibleEnd = 0.0;
 
     DragTarget draggingMarker = DragTarget::None;
+    // Set on mouseDown when draggingMarker == LoopBody: the region's width
+    // (held constant through the drag) and how far into it the user grabbed
+    // (so the region doesn't jump to re-centre under the cursor).
+    double dragLoopWidthSeconds = 0.0;
+    double dragGrabTimeOffset = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformComponent)
 };
