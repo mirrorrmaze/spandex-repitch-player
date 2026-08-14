@@ -49,6 +49,12 @@ void StretchAudioSource::setBuffer(juce::AudioBuffer<float> newBuffer, double ne
     readPosition.store(0);
     linkedCursor = 0.0;
     loopGoingForward.store(true);
+    // Trim markers are new per-track state (unlike the pre-existing loop
+    // region, which already carried over silently across loads before this
+    // feature existed) - reset them so a previous track's Start/End can't
+    // silently clip most of a freshly loaded, differently-sized file.
+    trimStart.store(0);
+    trimEnd.store(-1);
     sourceBuffer = std::move(newBuffer);
     sourceSampleRate = newSourceSampleRate > 0.0 ? newSourceSampleRate : 44100.0;
     rebuildStretcher();
@@ -186,8 +192,8 @@ void StretchAudioSource::renderRePitch(const juce::AudioSourceChannelInfo& buffe
     const auto mode = loopMode.load();
     const double endBoundary = isLoopingNow
         ? (double) juce::jmin((juce::int64) (totalSamples - 1), effectiveLoopEnd())
-        : (double) (totalSamples - 1);
-    const double startBoundary = isLoopingNow ? (double) effectiveLoopStart() : 0.0;
+        : (double) juce::jmin((juce::int64) (totalSamples - 1), effectiveTrimEnd());
+    const double startBoundary = isLoopingNow ? (double) effectiveLoopStart() : (double) effectiveTrimStart();
     const double loopLen = endBoundary - startBoundary;
 
     // Loop mode only governs direction while actually looping - if Loop is
@@ -316,8 +322,8 @@ void StretchAudioSource::renderWarped(const juce::AudioSourceChannelInfo& buffer
 
     const bool isLoopingNow = looping.load();
     const auto mode = loopMode.load();
-    const auto regionEnd = isLoopingNow ? juce::jmin(trackEnd, effectiveLoopEnd()) : trackEnd;
-    const auto regionStart = isLoopingNow ? effectiveLoopStart() : (juce::int64) 0;
+    const auto regionEnd = isLoopingNow ? juce::jmin(trackEnd, effectiveLoopEnd()) : juce::jmin(trackEnd, effectiveTrimEnd());
+    const auto regionStart = isLoopingNow ? effectiveLoopStart() : effectiveTrimStart();
 
     // Forward/Reverse loop by continuously feeding the stretcher a wrapped,
     // crossfade-blended stream (fillWarpChunkWrapping) instead of ever
@@ -446,8 +452,8 @@ void StretchAudioSource::renderPaulstretch(const juce::AudioSourceChannelInfo& b
     const bool isLoopingNow = looping.load();
     const auto mode = loopMode.load();
     const auto regionEnd = isLoopingNow ? juce::jmin((juce::int64) totalSamples, effectiveLoopEnd())
-                                         : (juce::int64) totalSamples;
-    const auto regionStart = isLoopingNow ? effectiveLoopStart() : (juce::int64) 0;
+                                         : juce::jmin((juce::int64) totalSamples, effectiveTrimEnd());
+    const auto regionStart = isLoopingNow ? effectiveLoopStart() : effectiveTrimStart();
 
     if (paulstretchScratch.getNumSamples() < numSamples)
         paulstretchScratch.setSize(2, numSamples, false, false, true);

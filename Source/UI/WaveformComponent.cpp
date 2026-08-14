@@ -59,6 +59,46 @@ float WaveformComponent::timeToX(double seconds) const
     return (float) (((seconds - visibleStart) / span) * (double) getWidth());
 }
 
+std::pair<double, double> WaveformComponent::resolvedTrimRange() const
+{
+    const double length = getLengthSeconds ? getLengthSeconds() : thumbnail.getTotalLength();
+    const double trimStartS = getTrimStartSeconds ? getTrimStartSeconds() : 0.0;
+    double trimEndS = length;
+    if (getTrimEndSeconds)
+    {
+        const auto rawEnd = getTrimEndSeconds();
+        trimEndS = rawEnd > trimStartS ? rawEnd : length;
+    }
+    return { trimStartS, trimEndS };
+}
+
+WaveformComponent::DragTarget WaveformComponent::hitTestMarker(int x) const
+{
+    constexpr float tolerance = 6.0f;
+    const float fx = (float) x;
+
+    if (getLoopInSeconds && getLoopOutSeconds)
+    {
+        const auto loopIn = getLoopInSeconds();
+        const auto loopOut = getLoopOutSeconds();
+        if (loopOut > loopIn)
+        {
+            if (std::abs(fx - timeToX(loopIn)) <= tolerance)
+                return DragTarget::LoopIn;
+            if (std::abs(fx - timeToX(loopOut)) <= tolerance)
+                return DragTarget::LoopOut;
+        }
+    }
+
+    const auto [trimStartS, trimEndS] = resolvedTrimRange();
+    if (std::abs(fx - timeToX(trimStartS)) <= tolerance)
+        return DragTarget::TrimStart;
+    if (std::abs(fx - timeToX(trimEndS)) <= tolerance)
+        return DragTarget::TrimEnd;
+
+    return DragTarget::None;
+}
+
 void WaveformComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -78,6 +118,20 @@ void WaveformComponent::paint(juce::Graphics& g)
     g.setColour(AppLookAndFeel::accent);
     thumbnail.drawChannels(g, bounds.reduced(0, 4), visibleStart, visibleEnd, 1.0f);
 
+    const auto [trimStartS, trimEndS] = resolvedTrimRange();
+    const bool trimActive = trimStartS > 0.0001 || trimEndS < thumbnail.getTotalLength() - 0.0001;
+
+    if (trimActive)
+    {
+        // Dim the excluded head/tail so the playable range reads at a
+        // glance, rather than the trim markers being the only clue.
+        g.setColour(AppLookAndFeel::bg.withAlpha(0.65f));
+        if (trimStartS > visibleStart)
+            g.fillRect(juce::Rectangle<float>(0.0f, 0.0f, timeToX(trimStartS), (float) bounds.getHeight()));
+        if (trimEndS < visibleEnd)
+            g.fillRect(juce::Rectangle<float>(timeToX(trimEndS), 0.0f, (float) bounds.getWidth() - timeToX(trimEndS), (float) bounds.getHeight()));
+    }
+
     if (getLoopInSeconds && getLoopOutSeconds)
     {
         const auto loopOut = getLoopOutSeconds();
@@ -96,6 +150,26 @@ void WaveformComponent::paint(juce::Graphics& g)
             g.drawLine(x1, 0.0f, x1, (float) bounds.getHeight(), 2.0f);
             g.drawLine(x2, 0.0f, x2, (float) bounds.getHeight(), 2.0f);
         }
+    }
+
+    // Trim Start/End: a thin line plus a small inward-pointing flag at the
+    // top, so they read as distinct grab handles from the loop's solid bars
+    // even in this theme's monochrome palette.
+    {
+        g.setColour(AppLookAndFeel::dim);
+        constexpr float flagH = 9.0f, flagW = 8.0f;
+
+        const auto xs = timeToX(trimStartS);
+        g.drawLine(xs, 0.0f, xs, (float) bounds.getHeight(), 1.5f);
+        juce::Path startFlag;
+        startFlag.addTriangle(xs, 0.0f, xs, flagH, xs + flagW, 0.0f);
+        g.fillPath(startFlag);
+
+        const auto xe = timeToX(trimEndS);
+        g.drawLine(xe, 0.0f, xe, (float) bounds.getHeight(), 1.5f);
+        juce::Path endFlag;
+        endFlag.addTriangle(xe, 0.0f, xe, flagH, xe - flagW, 0.0f);
+        g.fillPath(endFlag);
     }
 
     if (getLengthSeconds && getPositionSeconds)
@@ -127,6 +201,10 @@ void WaveformComponent::mouseDown(const juce::MouseEvent& e)
         return;
     }
 
+    draggingMarker = hitTestMarker(e.x);
+    if (draggingMarker != DragTarget::None)
+        return;
+
     if (onSeekSeconds)
         onSeekSeconds(xToTime(e.x));
 }
@@ -144,6 +222,56 @@ void WaveformComponent::mouseDrag(const juce::MouseEvent& e)
         return;
     }
 
+    if (draggingMarker != DragTarget::None)
+    {
+        constexpr double minGapSeconds = 0.02;
+        const double t = xToTime(e.x);
+        const double length = getLengthSeconds ? getLengthSeconds() : thumbnail.getTotalLength();
+
+        switch (draggingMarker)
+        {
+            case DragTarget::LoopIn:
+                if (onDragLoopInSeconds && getLoopOutSeconds)
+                {
+                    const double maxT = juce::jmax(0.0, getLoopOutSeconds() - minGapSeconds);
+                    onDragLoopInSeconds(juce::jlimit(0.0, maxT, t));
+                }
+                break;
+
+            case DragTarget::LoopOut:
+                if (onDragLoopOutSeconds && getLoopInSeconds)
+                {
+                    const double minT = getLoopInSeconds() + minGapSeconds;
+                    onDragLoopOutSeconds(juce::jlimit(minT, juce::jmax(minT, length), t));
+                }
+                break;
+
+            case DragTarget::TrimStart:
+                if (onDragTrimStartSeconds)
+                {
+                    const auto [ignoredStart, trimEndS] = resolvedTrimRange();
+                    juce::ignoreUnused(ignoredStart);
+                    onDragTrimStartSeconds(juce::jlimit(0.0, juce::jmax(0.0, trimEndS - minGapSeconds), t));
+                }
+                break;
+
+            case DragTarget::TrimEnd:
+                if (onDragTrimEndSeconds)
+                {
+                    const auto [trimStartS, ignoredEnd] = resolvedTrimRange();
+                    juce::ignoreUnused(ignoredEnd);
+                    const double minT = trimStartS + minGapSeconds;
+                    onDragTrimEndSeconds(juce::jlimit(minT, juce::jmax(minT, length), t));
+                }
+                break;
+
+            default:
+                break;
+        }
+        repaint();
+        return;
+    }
+
     if (onSeekSeconds)
         onSeekSeconds(xToTime(e.x));
 }
@@ -151,6 +279,14 @@ void WaveformComponent::mouseDrag(const juce::MouseEvent& e)
 void WaveformComponent::mouseUp(const juce::MouseEvent&)
 {
     isPanning = false;
+    draggingMarker = DragTarget::None;
+}
+
+void WaveformComponent::mouseMove(const juce::MouseEvent& e)
+{
+    setMouseCursor(hitTestMarker(e.x) != DragTarget::None
+        ? juce::MouseCursor::LeftRightResizeCursor
+        : juce::MouseCursor::NormalCursor);
 }
 
 void WaveformComponent::mouseDoubleClick(const juce::MouseEvent&)

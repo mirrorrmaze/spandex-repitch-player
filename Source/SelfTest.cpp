@@ -268,6 +268,108 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
     }
 
     {
+        // Sample Start/End trim markers (Ableton Sampler style): the outer
+        // playable boundary, independent of the loop brace nested inside
+        // it. Amplitude (not frequency) marks the excluded zones so plain
+        // RMS checks can tell "leaked into the excluded region" apart from
+        // "stayed inside the trim" without needing an FFT: loud (0.9) tone
+        // before trimStart and after trimEnd, quiet (0.2) tone in between -
+        // a broken trim would show up as elevated RMS from the loud zones
+        // bleeding in, not just as "some" audio playing.
+        const double sr = 44100.0;
+        const int totalSrcSamples = (int) (2.0 * sr);
+        const juce::int64 trimStartSamples = (juce::int64) (0.5 * sr);
+        const juce::int64 trimEndSamples = (juce::int64) (1.5 * sr);
+        juce::AudioBuffer<float> zonedBuf(2, totalSrcSamples);
+        for (int i = 0; i < totalSrcSamples; ++i)
+        {
+            const bool inTrim = i >= (int) trimStartSamples && i < (int) trimEndSamples;
+            const float amp = inTrim ? 0.2f : 0.9f;
+            const float s = amp * std::sin(2.0f * juce::MathConstants<float>::pi * 220.0f * (float) i / (float) sr);
+            zonedBuf.setSample(0, i, s);
+            zonedBuf.setSample(1, i, s);
+        }
+        const float expectedQuietRms = 0.2f / std::sqrt(2.0f);
+
+        auto renderTrimCase = [&](bool looping, juce::int64 explicitLoopStart, juce::int64 explicitLoopEnd, double renderSeconds)
+        {
+            StretchAudioSource s;
+            s.setBuffer(zonedBuf, sr);
+            s.setLinked(true);
+            s.setPitchSemitones(0.0);
+            s.setSpeedPercent(100.0);
+            s.setTrimStart(trimStartSamples);
+            s.setTrimEnd(trimEndSamples);
+            s.setLoopCrossfadeSeconds(0.0); // isolate the boundary itself from crossfade pre/postroll bleed
+            if (explicitLoopEnd > explicitLoopStart)
+                s.setLoopRegion(explicitLoopStart, explicitLoopEnd);
+            s.setLooping(looping);
+            s.setNextReadPosition(trimStartSamples);
+            s.play();
+
+            const int totalSamples = (int) (sr * renderSeconds);
+            juce::AudioBuffer<float> buf(2, totalSamples);
+            buf.clear();
+            int rendered = 0;
+            while (rendered < totalSamples)
+            {
+                const int thisBlock = juce::jmin(512, totalSamples - rendered);
+                juce::AudioSourceChannelInfo info(&buf, rendered, thisBlock);
+                s.getNextAudioBlock(info);
+                rendered += thisBlock;
+            }
+            return std::make_pair(std::move(buf), s.isPlaying());
+        };
+
+        auto rmsOfRange = [&](const juce::AudioBuffer<float>& buf, int start, int len)
+        {
+            double sum = 0.0;
+            int n = 0;
+            for (int i = juce::jmax(0, start); i < juce::jmin(buf.getNumSamples(), start + len); ++i, ++n)
+                sum += (double) buf.getSample(0, i) * buf.getSample(0, i);
+            return n > 0 ? (float) std::sqrt(sum / (double) n) : 0.0f;
+        };
+
+        // 1) Non-looping playback must stop at trimEnd rather than running
+        // on into the loud region physically past it.
+        {
+            const auto result = renderTrimCase(false, 0, -1, 2.0);
+            const auto& buf = result.first;
+            const float insideRms = rmsOfRange(buf, 0, (int) (0.5 * sr));
+            const float pastTrimRms = rmsOfRange(buf, (int) (1.3 * sr), (int) (0.5 * sr));
+            juce::Logger::writeToLog("trimtest: nonLooping insideRms=" + juce::String(insideRms, 4)
+                + " (expect ~" + juce::String(expectedQuietRms, 4) + ") pastTrimRms=" + juce::String(pastTrimRms, 4)
+                + " stillPlaying=" + juce::String((int) result.second)
+                + " (expect insideRms matches the quiet trim content, pastTrimRms ~0, stillPlaying=0 - must stop at End, not bleed into the loud excluded tail)");
+        }
+
+        // 2) Looping with no explicit region must default to the trim
+        // range - render several cycles and confirm the loud excluded
+        // zones never contribute, which they would if it fell back to
+        // looping the whole (loud+quiet+loud) file instead.
+        {
+            const auto result = renderTrimCase(true, 0, -1, 3.0);
+            const float overallRms = rmsOfRange(result.first, 0, result.first.getNumSamples());
+            juce::Logger::writeToLog("trimtest: loopDefaultsToTrim overallRms=" + juce::String(overallRms, 4)
+                + " (expect ~" + juce::String(expectedQuietRms, 4) + ") stillPlaying=" + juce::String((int) result.second)
+                + " (expect overallRms close to the quiet level across 3 loop cycles, not elevated by the loud zones - an unbounded default loop would leak them in)");
+        }
+
+        // 3) An explicit loop region wider than the trim (here, the whole
+        // file) must still clamp inside it - the loop brace nests within
+        // Start/End the same way it does in Sampler, so this should read
+        // identically to check 2 above rather than picking up the loud
+        // zones the raw [0, 2.0s) region would otherwise include.
+        {
+            const auto result = renderTrimCase(true, 0, (juce::int64) (2.0 * sr), 3.0);
+            const float overallRms = rmsOfRange(result.first, 0, result.first.getNumSamples());
+            juce::Logger::writeToLog("trimtest: explicitLoopClampedToTrim overallRms=" + juce::String(overallRms, 4)
+                + " (expect ~" + juce::String(expectedQuietRms, 4) + ") stillPlaying=" + juce::String((int) result.second)
+                + " (expect overallRms close to the quiet level, matching the defaulted case above - an explicit region wider than the trim must still clamp to it)");
+        }
+    }
+
+    {
         StretchAudioSource eqSrc;
         eqSrc.setBuffer(loaded.buffer, loaded.sourceSampleRate);
         eqSrc.setLinked(true);
