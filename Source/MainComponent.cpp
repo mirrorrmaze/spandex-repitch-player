@@ -134,24 +134,7 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
         });
     };
 
-    transport.playPauseButton.onClick = [this]
-    {
-        if (!audioEngine.hasTrackLoaded())
-            return;
-
-        if (audioEngine.isPlaying())
-        {
-            audioEngine.pause();
-        }
-        else
-        {
-            if (loopControls.playFromStartToggle.getToggleState())
-                audioEngine.setPositionSeconds(audioEngine.getTrimStartSeconds());
-            audioEngine.play();
-        }
-
-        transport.setPlayingState(audioEngine.isPlaying());
-    };
+    transport.playPauseButton.onClick = [this] { togglePlayPause(); };
 
     transport.stopButton.onClick = [this]
     {
@@ -415,15 +398,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
     if (key == juce::KeyPress::spaceKey)
     {
-        if (!audioEngine.hasTrackLoaded())
-            return true;
-
-        if (audioEngine.isPlaying())
-            audioEngine.pause();
-        else
-            audioEngine.play();
-
-        transport.setPlayingState(audioEngine.isPlaying());
+        togglePlayPause();
         return true;
     }
 
@@ -434,6 +409,25 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     }
 
     return false;
+}
+
+void MainComponent::togglePlayPause()
+{
+    if (!audioEngine.hasTrackLoaded())
+        return;
+
+    if (audioEngine.isPlaying())
+    {
+        audioEngine.pause();
+    }
+    else
+    {
+        if (loopControls.playFromStartToggle.getToggleState())
+            audioEngine.setPositionSeconds(audioEngine.getTrimStartSeconds());
+        audioEngine.play();
+    }
+
+    transport.setPlayingState(audioEngine.isPlaying());
 }
 
 juce::String MainComponent::formatTime(double seconds)

@@ -37,6 +37,12 @@ private:
     void timerCallback() override;
     static juce::String formatTime(double seconds);
 
+    // Shared by the transport's Play/Pause button and the spacebar shortcut
+    // in keyPressed() - previously duplicated between the two, which let
+    // the spacebar path silently drift out of sync with the button's when
+    // the From Start toggle was added (button honoured it, spacebar didn't).
+    void togglePlayPause();
+
     AudioEngine& audioEngine;
     WaveformComponent waveform { audioEngine.getThumbnail() };
     TransportControls transport;
