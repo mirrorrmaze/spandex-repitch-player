@@ -78,6 +78,26 @@ public:
     }
     bool hasLoopRegion() const { return stretchSource.hasLoopRegion(); }
 
+    // Ableton Sampler-style Start/End trim markers - the outer playable
+    // range, independent of (and containing) the loop brace above.
+    void setTrimStartSeconds(double seconds)
+    {
+        stretchSource.setTrimStart((juce::int64) (seconds * sourceSampleRateAtLoad));
+    }
+    void setTrimEndSeconds(double seconds)
+    {
+        stretchSource.setTrimEnd((juce::int64) (seconds * sourceSampleRateAtLoad));
+    }
+    double getTrimStartSeconds() const
+    {
+        return sourceSampleRateAtLoad > 0.0 ? (double) stretchSource.getTrimStart() / sourceSampleRateAtLoad : 0.0;
+    }
+    double getTrimEndSeconds() const
+    {
+        return sourceSampleRateAtLoad > 0.0 ? (double) stretchSource.getTrimEnd() / sourceSampleRateAtLoad : -1.0;
+    }
+    bool hasTrim() const { return stretchSource.hasTrim(); }
+
     void setLoopCrossfadeMs(float ms) { stretchSource.setLoopCrossfadeSeconds(ms * 0.001); }
     float getLoopCrossfadeMs() const { return (float) (stretchSource.getLoopCrossfadeSeconds() * 1000.0); }
 

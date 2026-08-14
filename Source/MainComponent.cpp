@@ -81,6 +81,16 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
     };
     waveform.getLoopInSeconds = [this] { return audioEngine.getLoopInSeconds(); };
     waveform.getLoopOutSeconds = [this] { return audioEngine.getLoopOutSeconds(); };
+    waveform.getTrimStartSeconds = [this] { return audioEngine.getTrimStartSeconds(); };
+    waveform.getTrimEndSeconds = [this] { return audioEngine.getTrimEndSeconds(); };
+
+    // Dragging a marker's handle directly on the waveform reuses the same
+    // AudioEngine calls the Loop In/Out buttons already use - the buttons
+    // set a point to the current playhead, dragging repositions it freely.
+    waveform.onDragLoopInSeconds = [this](double seconds) { audioEngine.setLoopInSeconds(seconds); };
+    waveform.onDragLoopOutSeconds = [this](double seconds) { audioEngine.setLoopOutSeconds(seconds); };
+    waveform.onDragTrimStartSeconds = [this](double seconds) { audioEngine.setTrimStartSeconds(seconds); };
+    waveform.onDragTrimEndSeconds = [this](double seconds) { audioEngine.setTrimEndSeconds(seconds); };
 
     transport.openButton.onClick = [this]
     {

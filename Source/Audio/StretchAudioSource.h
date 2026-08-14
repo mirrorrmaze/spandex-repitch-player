@@ -108,6 +108,20 @@ public:
     juce::int64 getLoopEnd() const noexcept { return loopEnd.load(); }
     bool hasLoopRegion() const noexcept { return loopEnd.load() > loopStart.load(); }
 
+    // Ableton Sampler-style Start/End trim markers: the outer playable
+    // boundary of the track, independent of the loop brace (loopStart/
+    // loopEnd) nested inside it. Playback - looping or not - never reads
+    // outside [trimStart, trimEnd), and a loop region left unset defaults to
+    // the trim range rather than the whole file, exactly like Sampler's
+    // Sustain Loop defaults to [Start, End) until you narrow it with its own
+    // brace. Pass trimEnd <= trimStart to disable and fall back to the whole
+    // file, same convention as setLoopRegion.
+    void setTrimStart(juce::int64 sample) { trimStart.store(juce::jmax((juce::int64) 0, sample)); }
+    void setTrimEnd(juce::int64 sample) { trimEnd.store(sample); }
+    juce::int64 getTrimStart() const noexcept { return trimStart.load(); }
+    juce::int64 getTrimEnd() const noexcept { return trimEnd.load(); }
+    bool hasTrim() const noexcept { return trimEnd.load() > trimStart.load(); }
+
     // Ableton Sampler-style loop types (its Sustain Loop Mode: a plain
     // repeat, "Back and Forth", or a reverse loop). Forward is the classic
     // wrap-to-start repeat; PingPong alternates direction at each boundary
@@ -157,6 +171,8 @@ private:
     std::atomic<bool> seekPending { false };
     std::atomic<juce::int64> loopStart { 0 };
     std::atomic<juce::int64> loopEnd { -1 };
+    std::atomic<juce::int64> trimStart { 0 };
+    std::atomic<juce::int64> trimEnd { -1 };
 
     std::atomic<LoopMode> loopMode { LoopMode::Forward };
     // Current playback direction - only meaningful (and mutated mid-stream)
@@ -165,10 +181,22 @@ private:
     // of direction rather than resetting to Forward each time.
     std::atomic<bool> loopGoingForward { true };
 
-    juce::int64 effectiveLoopStart() const noexcept { return hasLoopRegion() ? loopStart.load() : 0; }
+    // An explicit loop region is clamped inside the trim range rather than
+    // allowed to escape it, so the loop brace always nests within Start/End
+    // the way it does in Sampler; with no explicit region, the loop simply
+    // takes the trim range itself.
+    juce::int64 effectiveTrimStart() const noexcept { return trimStart.load(); }
+    juce::int64 effectiveTrimEnd() const noexcept
+    {
+        return hasTrim() ? trimEnd.load() : (juce::int64) sourceBuffer.getNumSamples();
+    }
+    juce::int64 effectiveLoopStart() const noexcept
+    {
+        return hasLoopRegion() ? juce::jmax(loopStart.load(), effectiveTrimStart()) : effectiveTrimStart();
+    }
     juce::int64 effectiveLoopEnd() const noexcept
     {
-        return hasLoopRegion() ? loopEnd.load() : (juce::int64) sourceBuffer.getNumSamples();
+        return hasLoopRegion() ? juce::jmin(loopEnd.load(), effectiveTrimEnd()) : effectiveTrimEnd();
     }
 
     std::atomic<double> loopCrossfadeSeconds { 0.02 };
