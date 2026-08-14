@@ -659,6 +659,67 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
     }
 
     {
+        // FX chain routing: rendering the same settings through two
+        // different explicit orders - Lossy before EQ's lowpass vs. after -
+        // should measurably differ (EQ smooths content Lossy already
+        // quantized/jittered in one order; Lossy quantizes already-band-
+        // limited content in the other), proving setChainOrder() actually
+        // changes the processing order rather than being silently ignored.
+        StretchAudioSource routeSrc;
+        routeSrc.setBuffer(loaded.buffer, loaded.sourceSampleRate);
+        routeSrc.setLinked(true);
+        routeSrc.setPitchSemitones(0.0);
+
+        EffectsChain routeFx(routeSrc);
+        routeFx.prepareToPlay(512, loaded.sourceSampleRate);
+
+        routeFx.setEqBandEnabled(0, true);
+        routeFx.setEqBandType(0, EffectsChain::FilterType::LowPass);
+        routeFx.setEqBandFrequency(0, 800.0f);
+        routeFx.setEqBandQ(0, 0.707f);
+        routeFx.setLossyEnabled(true);
+        routeFx.setLossyBits(2.0f);
+        routeFx.setLossyJitter(1.0f);
+        routeFx.setLossyRateHz(200.0f);
+        routeFx.setLossyMix(1.0f);
+
+        using Stage = EffectsChain::FxStage;
+        auto renderWithOrder = [&](const std::vector<Stage>& order)
+        {
+            routeFx.setChainOrder(order);
+            routeSrc.setNextReadPosition(0);
+            routeSrc.play();
+            const int numSamples = (int) loaded.sourceSampleRate;
+            juce::AudioBuffer<float> buf(2, numSamples);
+            buf.clear();
+            int rendered = 0;
+            while (rendered < numSamples)
+            {
+                const int block = juce::jmin(512, numSamples - rendered);
+                juce::AudioSourceChannelInfo info(&buf, rendered, block);
+                routeFx.getNextAudioBlock(info);
+                rendered += block;
+            }
+            return buf;
+        };
+
+        const auto lossyFirst = renderWithOrder({ Stage::Lossy, Stage::Eq, Stage::Reverb, Stage::Delay, Stage::Shifter, Stage::Smudge, Stage::Gain });
+        const auto eqFirst = renderWithOrder({ Stage::Eq, Stage::Lossy, Stage::Reverb, Stage::Delay, Stage::Shifter, Stage::Smudge, Stage::Gain });
+
+        double sumSqDiff = 0.0;
+        const int n = juce::jmin(lossyFirst.getNumSamples(), eqFirst.getNumSamples());
+        for (int i = 0; i < n; ++i)
+        {
+            const double d = (double) lossyFirst.getSample(0, i) - (double) eqFirst.getSample(0, i);
+            sumSqDiff += d * d;
+        }
+        const float diffRms = (float) std::sqrt(sumSqDiff / (double) n);
+        juce::Logger::writeToLog("fxroutingtest: lossyFirstVsEqFirst diffRms=" + juce::String(diffRms, 5)
+            + " (expect clearly nonzero - reordering Lossy relative to EQ's lowpass must audibly change"
+            + " the result, proving setChainOrder is respected rather than ignored)");
+    }
+
+    {
         // Export pipeline: render pitch+7st/100% through each output format,
         // then decode each back with the app's own AudioFormatManager (which
         // includes MP3 read support) and re-save as plain WAV, so the pitch

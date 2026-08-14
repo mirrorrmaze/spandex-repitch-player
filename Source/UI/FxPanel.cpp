@@ -208,6 +208,12 @@ FxPanel::FxPanel(EffectsChain& chain)
     clipKnob.slider.onValueChange = [this] { fx.setClipAmount((float) clipKnob.slider.getValue()); };
     addAndMakeVisible(clipKnob);
 
+    routingBar.onOrderChanged = [this](const std::vector<EffectsChain::FxStage>& order)
+    {
+        fx.setChainOrder(order);
+    };
+    addAndMakeVisible(routingBar);
+
     refreshFromEngine();
 }
 
@@ -259,6 +265,8 @@ void FxPanel::refreshFromEngine()
     outputGain.slider.setValue(fx.getOutputGainDb(), juce::dontSendNotification);
     driveKnob.slider.setValue(fx.getDriveDb(), juce::dontSendNotification);
     clipKnob.slider.setValue(fx.getClipAmount(), juce::dontSendNotification);
+
+    routingBar.setOrder(fx.getChainOrder());
 }
 
 void FxPanel::paint(juce::Graphics& g)
@@ -312,6 +320,12 @@ void FxPanel::resized()
 {
     auto bounds = getLocalBounds().reduced(12);
     const int gap = 10;
+
+    constexpr int routingBarHeight = 40;
+    auto routingArea = bounds.removeFromBottom(routingBarHeight);
+    bounds.removeFromBottom(gap);
+    routingBar.setBounds(routingArea);
+
     const int rowHeight = (bounds.getHeight() - gap) / 2;
 
     auto topRow = bounds.removeFromTop(rowHeight);

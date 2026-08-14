@@ -68,6 +68,7 @@ target_sources(SPANDEX PRIVATE
     Source/UI/WarpModeSelector.cpp
     Source/UI/ExportPanel.cpp
     Source/UI/FxPanel.cpp
+    Source/UI/FxRoutingBar.cpp
     Source/UI/EqCurveEditor.cpp
     Source/UI/EqPanel.cpp
     Source/UI/HeaderTabs.cpp

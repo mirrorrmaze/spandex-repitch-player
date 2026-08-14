@@ -156,23 +156,26 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         }
     };
 
-    for (auto& band : bands)
+    auto processEq = [&]
     {
-        auto& gain = band.enabledGain;
-        gain.setTargetValue(band.state.enabled.load() ? 1.0f : 0.0f);
-
-        if (!gain.isSmoothing())
+        for (auto& band : bands)
         {
-            if (gain.getCurrentValue() <= 0.0001f)
-                continue; // steady off - matches the old skip-entirely behaviour
-            band.processor.process(context); // steady on - no blend overhead needed
-            continue;
-        }
+            auto& gain = band.enabledGain;
+            gain.setTargetValue(band.state.enabled.load() ? 1.0f : 0.0f);
 
-        captureDry();
-        band.processor.process(context);
-        blendWithGain(gain);
-    }
+            if (!gain.isSmoothing())
+            {
+                if (gain.getCurrentValue() <= 0.0001f)
+                    continue; // steady off - matches the old skip-entirely behaviour
+                band.processor.process(context); // steady on - no blend overhead needed
+                continue;
+            }
+
+            captureDry();
+            band.processor.process(context);
+            blendWithGain(gain);
+        }
+    };
 
     // Smudge, Delay, and Reverb all hold onto meaningful internal state
     // (frozen spectrum, delay/grain buffers, reverb tail) that should keep
@@ -188,6 +191,7 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     // always runs here too for the same reasoning and to keep the pattern
     // consistent - stopping it mid-hold would go just as stale as the
     // reverb tank does.
+    auto processSmudge = [&]
     {
         smudgeEnabledGain.setTargetValue(smudgeEnabled.load() ? 1.0f : 0.0f);
         const int smudgeCh = juce::jmin(2, numCh);
@@ -204,8 +208,9 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         }
 
         blendWithGain(smudgeEnabledGain);
-    }
+    };
 
+    auto processLossy = [&]
     {
         lossyEnabledGain.setTargetValue(lossyEnabled.load() ? 1.0f : 0.0f);
         const int lossyCh = juce::jmin(2, numCh);
@@ -222,8 +227,9 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         }
 
         blendWithGain(lossyEnabledGain);
-    }
+    };
 
+    auto processDelay = [&]
     {
         delayEnabledGain.setTargetValue(delayEnabled.load() ? 1.0f : 0.0f);
         captureDry();
@@ -235,8 +241,9 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         granularDelay.process(channelPtrs, delayCh, n);
 
         blendWithGain(delayEnabledGain);
-    }
+    };
 
+    auto processShifter = [&]
     {
         shifterEnabledGain.setTargetValue(shifterEnabled.load() ? 1.0f : 0.0f);
         captureDry();
@@ -270,29 +277,31 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         }
 
         blendWithGain(shifterEnabledGain);
-    }
+    };
 
-    if (numCh >= 2)
+    auto processReverb = [&]
     {
+        if (numCh < 2)
+            return;
         reverbEnabledGain.setTargetValue(reverbEnabled.load() ? 1.0f : 0.0f);
         captureDry();
         reverb.process(context);
         blendWithGain(reverbEnabledGain);
-    }
+    };
 
+    // Bus glue stage: a frequency-domain hard clipper (see
+    // SpectralClipperProcessor) blended against the dry spectrum by the
+    // Clip knob, followed by a tanh drive/saturation waveshaper. Replaces
+    // the old single-knob compressor, which read as "doesn't do much" per
+    // direct feedback - clipping whichever frequencies are hot, per
+    // channel, reads as clearly more distorted/present than ducking the
+    // whole signal with one shared gain-reduction envelope did. The
+    // clipper's own STFT always runs (like Smudge/Lossy above) so raising
+    // Clip back up doesn't resume from stale/reset internal state; only
+    // Drive's stateless tanh stage is worth skipping outright when it's at
+    // 0dB.
+    auto processGain = [&]
     {
-        // Bus glue stage: a frequency-domain hard clipper (see
-        // SpectralClipperProcessor) blended against the dry spectrum by the
-        // Clip knob, followed by a tanh drive/saturation waveshaper.
-        // Applied to the fully mixed signal right before the final output
-        // trim. Replaces the old single-knob compressor, which read as
-        // "doesn't do much" per direct feedback - clipping whichever
-        // frequencies are hot, per channel, reads as clearly more
-        // distorted/present than ducking the whole signal with one shared
-        // gain-reduction envelope did. The clipper's own STFT always runs
-        // (like Smudge/Lossy above) so raising Clip back up doesn't resume
-        // from stale/reset internal state; only Drive's stateless tanh
-        // stage is worth skipping outright when it's at 0dB.
         const float driveDbNow = driveDb.load();
         const int clipCh = juce::jmin(2, numCh);
         if ((int) clipperScratchL.size() < n)
@@ -320,6 +329,22 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
                 for (int i = 0; i < n; ++i)
                     data[i] = std::tanh(data[i] * driveK) * driveNorm;
             }
+        }
+    };
+
+    // Routable order (EQ/Reverb/Delay/Shifter/Smudge/Lossy/Gain) - Input
+    // gain above and Output gain below stay fixed bookends regardless.
+    for (auto stage : chainOrder)
+    {
+        switch (stage)
+        {
+            case FxStage::Eq:      processEq();      break;
+            case FxStage::Reverb:  processReverb();  break;
+            case FxStage::Delay:   processDelay();   break;
+            case FxStage::Shifter: processShifter(); break;
+            case FxStage::Smudge:  processSmudge();  break;
+            case FxStage::Lossy:   processLossy();   break;
+            case FxStage::Gain:    processGain();    break;
         }
     }
 

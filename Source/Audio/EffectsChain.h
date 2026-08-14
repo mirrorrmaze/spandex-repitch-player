@@ -30,6 +30,14 @@ public:
     static constexpr int numEqBands = 8;
     static constexpr int spectrumSize = 1024; // fftSize / 2
 
+    // The reorderable FX chain blocks - one per FX-tab card, plus EQ (which
+    // lives on its own tab but still participates in the routing order).
+    // Input/Output trim are deliberately not part of this: they're already
+    // documented as wrapping the *whole* chain, not really "an effect" the
+    // same way these are, so they stay fixed first/last regardless of how
+    // the rest is ordered.
+    enum class FxStage { Eq, Reverb, Delay, Shifter, Smudge, Lossy, Gain };
+
     struct EqBandState
     {
         std::atomic<bool> enabled { false };
@@ -168,6 +176,20 @@ public:
     }
     float getClipAmount() const { return clipAmount.load(); }
 
+    // FX chain routing: the order the 7 blocks above process in. Defaults
+    // to the original hardcoded order, so behaviour is unchanged until the
+    // user actually drags something in the routing bar.
+    void setChainOrder(const std::vector<FxStage>& order)
+    {
+        const juce::ScopedLock sl(lock);
+        chainOrder = order;
+    }
+    std::vector<FxStage> getChainOrder() const
+    {
+        const juce::ScopedLock sl(lock);
+        return chainOrder;
+    }
+
 private:
     void updateEqBandCoefficients(int index);
     void pushToAnalyzer(const float* data, int numSamples);
@@ -251,6 +273,9 @@ private:
     std::atomic<float> clipAmount { 0.0f };
     SpectralClipperProcessor clipperL, clipperR;
     std::vector<float> clipperScratchL, clipperScratchR;
+
+    std::vector<FxStage> chainOrder { FxStage::Eq, FxStage::Smudge, FxStage::Lossy,
+                                       FxStage::Delay, FxStage::Shifter, FxStage::Reverb, FxStage::Gain };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EffectsChain)
 };

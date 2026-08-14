@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "LabeledKnob.h"
+#include "FxRoutingBar.h"
 #include "../Audio/EffectsChain.h"
 
 // Reverb, granular Delay, Frequency Shifter, Smudge, and Gain controls,
@@ -27,6 +28,10 @@ private:
     EffectsChain& fx;
 
     juce::Rectangle<int> reverbCard, delayCard, shifterCard, smudgeCard, lossyCard, gainCard;
+
+    // Routing: drag chip order to change how the 7 blocks above route into
+    // each other.
+    FxRoutingBar routingBar;
 
     juce::Label reverbTitle { {}, "Reverb" };
     juce::ToggleButton reverbEnable { "On" };
