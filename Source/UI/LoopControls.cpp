@@ -6,6 +6,8 @@ LoopControls::LoopControls()
     addAndMakeVisible(loopInButton);
     addAndMakeVisible(loopOutButton);
     addAndMakeVisible(loopToggle);
+    addAndMakeVisible(playFromStartToggle);
+    addAndMakeVisible(linkLoopToStartToggle);
 
     loopModeBox.addItem("Forward", 1);
     loopModeBox.addItem("Ping-Pong", 2);
@@ -36,6 +38,8 @@ void LoopControls::resized()
     fb.items.add(juce::FlexItem(loopOutButton).withWidth(74).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(loopToggle).withWidth(56).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(loopModeBox).withWidth(98).withHeight(28).withMargin(2));
+    fb.items.add(juce::FlexItem(playFromStartToggle).withWidth(82).withHeight(28).withMargin(2));
+    fb.items.add(juce::FlexItem(linkLoopToStartToggle).withWidth(52).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(crossfadeLabel).withWidth(46).withHeight(28).withMargin(2));
     fb.items.add(juce::FlexItem(crossfadeSlider).withWidth(110).withHeight(28).withMargin(2));
     fb.performLayout(bounds);

@@ -89,7 +89,15 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
     // set a point to the current playhead, dragging repositions it freely.
     waveform.onDragLoopInSeconds = [this](double seconds) { audioEngine.setLoopInSeconds(seconds); };
     waveform.onDragLoopOutSeconds = [this](double seconds) { audioEngine.setLoopOutSeconds(seconds); };
-    waveform.onDragTrimStartSeconds = [this](double seconds) { audioEngine.setTrimStartSeconds(seconds); };
+    waveform.onDragTrimStartSeconds = [this](double seconds)
+    {
+        if (loopControls.linkLoopToStartToggle.getToggleState() && audioEngine.hasLoopRegion())
+        {
+            const double delta = seconds - audioEngine.getTrimStartSeconds();
+            audioEngine.setLoopInSeconds(audioEngine.getLoopInSeconds() + delta);
+        }
+        audioEngine.setTrimStartSeconds(seconds);
+    };
     waveform.onDragTrimEndSeconds = [this](double seconds) { audioEngine.setTrimEndSeconds(seconds); };
 
     transport.openButton.onClick = [this]
@@ -116,9 +124,15 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
             return;
 
         if (audioEngine.isPlaying())
+        {
             audioEngine.pause();
+        }
         else
+        {
+            if (loopControls.playFromStartToggle.getToggleState())
+                audioEngine.setPositionSeconds(audioEngine.getTrimStartSeconds());
             audioEngine.play();
+        }
 
         transport.setPlayingState(audioEngine.isPlaying());
     };

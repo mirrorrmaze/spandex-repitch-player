@@ -23,6 +23,16 @@ public:
     juce::Label crossfadeLabel { {}, "X-fade" };
     juce::Slider crossfadeSlider;
 
+    // When on, pressing Play always seeks to the Sample Start trim marker
+    // first, rather than resuming wherever playback last was - matches how
+    // a sampler retriggers from Start on every note.
+    juce::ToggleButton playFromStartToggle { "From Start" };
+    // When on, dragging the Sample Start trim marker on the waveform also
+    // drags the Loop Start marker by the same delta, preserving their
+    // relative offset - Ableton Sampler's actual Start/Loop-Start Link
+    // behaviour. Off (default) keeps them fully independent, as before.
+    juce::ToggleButton linkLoopToStartToggle { "Link" };
+
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LoopControls)
 };
