@@ -31,6 +31,14 @@ HeaderTabs::HeaderTabs()
         }
 
         juce::PopupMenu mainMenu;
+        if (updateAvailable)
+        {
+            mainMenu.addItem("Update available: " + updateVersionTag, [this]
+            {
+                juce::URL(updateReleaseUrl).launchInDefaultBrowser();
+            });
+            mainMenu.addSeparator();
+        }
         mainMenu.addSubMenu("Theme", themeMenu);
         mainMenu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(settingsButton));
     };
@@ -46,6 +54,20 @@ HeaderTabs::HeaderTabs()
 void HeaderTabs::lookAndFeelChanged()
 {
     updateButtonStates();
+}
+
+void HeaderTabs::setUpdateAvailable(const juce::String& versionTag, const juce::String& releaseUrl)
+{
+    updateAvailable = true;
+    updateVersionTag = versionTag;
+    updateReleaseUrl = releaseUrl;
+
+    // updateButtonStates() only ever touches playerButton/fxButton/
+    // eqButton's colours (tab-selection highlighting), so this survives
+    // later theme switches without needing to re-apply it there too.
+    settingsButton.setColour(juce::TextButton::buttonColourId, AppLookAndFeel::bright);
+    settingsButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+    settingsButton.repaint();
 }
 
 void HeaderTabs::setSelectedTab(Tab tab)

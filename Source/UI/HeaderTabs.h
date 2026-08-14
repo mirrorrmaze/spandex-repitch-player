@@ -18,6 +18,12 @@ public:
 
     std::function<void(Tab)> onTabSelected;
 
+    // Called (at most once, from UpdateChecker's callback) when a newer
+    // release is found: tints the settings button to the accent colour as
+    // a passive, always-visible cue, and adds a menu item that opens the
+    // release page in the default browser when clicked.
+    void setUpdateAvailable(const juce::String& versionTag, const juce::String& releaseUrl);
+
 private:
     void updateButtonStates();
     void lookAndFeelChanged() override;
@@ -27,6 +33,9 @@ private:
     juce::TextButton eqButton { "EQ" };
     juce::TextButton settingsButton { "..." };
     Tab selected = Tab::Player;
+
+    bool updateAvailable = false;
+    juce::String updateVersionTag, updateReleaseUrl;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HeaderTabs)
 };

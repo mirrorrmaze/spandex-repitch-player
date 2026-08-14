@@ -212,6 +212,14 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
     addAndMakeVisible(eqPanel);
     updateTabVisibility();
 
+    // Quiet, best-effort background check - see UpdateChecker's own header
+    // comment for why this only ever offers a link, never auto-installs.
+    updateChecker.onUpdateAvailable = [this](juce::String versionTag, juce::String releaseUrl)
+    {
+        headerTabs.setUpdateAvailable(versionTag, releaseUrl);
+    };
+    updateChecker.checkAsync();
+
     setSize(1300, 850);
     setWantsKeyboardFocus(true);
     grabKeyboardFocus();
