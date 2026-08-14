@@ -203,10 +203,10 @@ FxPanel::FxPanel(EffectsChain& chain)
     driveKnob.slider.onValueChange = [this] { fx.setDriveDb((float) driveKnob.slider.getValue()); };
     addAndMakeVisible(driveKnob);
 
-    compKnob.slider.setRange(0.0, 1.0, 0.001);
-    compKnob.slider.setDoubleClickReturnValue(true, 0.0);
-    compKnob.slider.onValueChange = [this] { fx.setCompAmount((float) compKnob.slider.getValue()); };
-    addAndMakeVisible(compKnob);
+    clipKnob.slider.setRange(0.0, 1.0, 0.001);
+    clipKnob.slider.setDoubleClickReturnValue(true, 0.0);
+    clipKnob.slider.onValueChange = [this] { fx.setClipAmount((float) clipKnob.slider.getValue()); };
+    addAndMakeVisible(clipKnob);
 
     refreshFromEngine();
 }
@@ -258,7 +258,7 @@ void FxPanel::refreshFromEngine()
     inputGain.slider.setValue(fx.getInputGainDb(), juce::dontSendNotification);
     outputGain.slider.setValue(fx.getOutputGainDb(), juce::dontSendNotification);
     driveKnob.slider.setValue(fx.getDriveDb(), juce::dontSendNotification);
-    compKnob.slider.setValue(fx.getCompAmount(), juce::dontSendNotification);
+    clipKnob.slider.setValue(fx.getClipAmount(), juce::dontSendNotification);
 }
 
 void FxPanel::paint(juce::Graphics& g)
@@ -351,5 +351,5 @@ void FxPanel::resized()
                   { &shifterCoarse, &shifterFine, &shifterSpread, &shifterFeedback, &shifterMix }, &shifterModeBox);
     layoutSection(smudgeCard, smudgeTitle, &smudgeEnable, { &smudgeAmount, &smudgeRate, &smudgeFeedback });
     layoutSection(lossyCard, lossyTitle, &lossyEnable, { &lossyBits, &lossyRate, &lossyJitter, &lossyMix });
-    layoutSection(gainCard, gainTitle, nullptr, { &inputGain, &outputGain, &driveKnob, &compKnob });
+    layoutSection(gainCard, gainTitle, nullptr, { &inputGain, &outputGain, &driveKnob, &clipKnob });
 }

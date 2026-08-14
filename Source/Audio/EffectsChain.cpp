@@ -94,8 +94,10 @@ void EffectsChain::prepareToPlay(int samplesPerBlockExpected, double newSampleRa
     lossyEnabledGain.reset(sampleRate, enabledRampSeconds);
     lossyEnabledGain.setCurrentAndTargetValue(lossyEnabled.load() ? 1.0f : 0.0f);
 
-    compEnvelopeDb = 0.0f;
-    compRmsEnvelope = 0.0f;
+    clipperL.prepare();
+    clipperR.prepare();
+    clipperL.reset();
+    clipperR.reset();
 }
 
 void EffectsChain::releaseResources()
@@ -279,79 +281,44 @@ void EffectsChain::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     }
 
     {
-        // Bus glue stage: an always-aggressive compressor (fixed threshold/
-        // ratio/attack/release - it doesn't get gentler as the knob turns
-        // down) blended against the dry signal by the Compression knob,
-        // the way Xfer OTT's own "Depth" control works. Two things make
-        // this read as "bite" rather than a barely-there level nudge:
-        // (1) the detector tracks a short RMS-style envelope instead of
-        // the raw instantaneous sample - a peak detector on real material
-        // chases every zero-crossing/wobble faster than the attack time
-        // can react to, which quietly dilutes the *achieved* reduction far
-        // below the on-paper ratio (confirmed the hard way: a continuous
-        // tone barely moved the old instantaneous-peak version at all);
-        // (2) it compresses *upward* as well as downward - quiet material
-        // gets pulled up, not just loud material pulled down - which is
-        // most of what actually gives OTT-style processing its in-your-
-        // face, everything-slammed-to-one-intensity character. Followed by
-        // a tanh drive/saturation waveshaper. Applied to the fully mixed
-        // signal right before the final output trim. Skipped entirely when
-        // both controls are at their default/off position so a plugin
-        // instance nobody touches these on costs nothing extra per sample.
+        // Bus glue stage: a frequency-domain hard clipper (see
+        // SpectralClipperProcessor) blended against the dry spectrum by the
+        // Clip knob, followed by a tanh drive/saturation waveshaper.
+        // Applied to the fully mixed signal right before the final output
+        // trim. Replaces the old single-knob compressor, which read as
+        // "doesn't do much" per direct feedback - clipping whichever
+        // frequencies are hot, per channel, reads as clearly more
+        // distorted/present than ducking the whole signal with one shared
+        // gain-reduction envelope did. The clipper's own STFT always runs
+        // (like Smudge/Lossy above) so raising Clip back up doesn't resume
+        // from stale/reset internal state; only Drive's stateless tanh
+        // stage is worth skipping outright when it's at 0dB.
         const float driveDbNow = driveDb.load();
-        const float compAmt = compAmount.load();
-
-        if (driveDbNow > 0.001f || compAmt > 0.001f)
+        const int clipCh = juce::jmin(2, numCh);
+        if ((int) clipperScratchL.size() < n)
         {
-            constexpr float threshDb = -24.0f;
-            constexpr float ratio = 8.0f;          // downward
-            constexpr float upwardRatio = 3.0f;     // gentler - avoids amplifying noise floor too hard
-            constexpr float maxUpwardBoostDb = 10.0f;
-            constexpr float makeupDb = 6.0f;        // fixed extra, on top of the upward lift
-            const float rmsCoeff = (float) std::exp(-1.0 / (0.008 * sampleRate));    // ~8ms loudness window
-            const float attackCoeff = (float) std::exp(-1.0 / (0.003 * sampleRate)); // ~3ms
-            const float releaseCoeff = (float) std::exp(-1.0 / (0.120 * sampleRate)); // ~120ms
-            const float makeupGain = juce::Decibels::decibelsToGain(makeupDb);
+            clipperScratchL.resize((size_t) n);
+            clipperScratchR.resize((size_t) n);
+        }
+
+        for (int ch = 0; ch < clipCh; ++ch)
+        {
+            auto* data = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
+            auto& proc = (ch == 0) ? clipperL : clipperR;
+            auto& scratch = (ch == 0) ? clipperScratchL : clipperScratchR;
+            proc.process(data, scratch.data(), n);
+            std::copy(scratch.data(), scratch.data() + n, data);
+        }
+
+        if (driveDbNow > 0.001f)
+        {
             const float driveK = juce::Decibels::decibelsToGain(driveDbNow);
-            const float driveNorm = driveDbNow > 0.001f && std::tanh(driveK) > 1.0e-6f ? 1.0f / std::tanh(driveK) : 1.0f;
-
-            for (int i = 0; i < n; ++i)
+            const float driveNorm = std::tanh(driveK) > 1.0e-6f ? 1.0f / std::tanh(driveK) : 1.0f;
+            for (int ch = 0; ch < numCh; ++ch)
             {
-                float peak = 0.0f;
-                for (int ch = 0; ch < numCh; ++ch)
-                    peak = juce::jmax(peak, std::abs(bufferToFill.buffer->getReadPointer(ch, bufferToFill.startSample)[i]));
-
-                compRmsEnvelope = peak * peak + rmsCoeff * (compRmsEnvelope - peak * peak);
-                const float levelDb = juce::Decibels::gainToDecibels(std::sqrt(juce::jmax(0.0f, compRmsEnvelope)), -100.0f);
-
-                float targetGrDb = 0.0f;
-                if (compAmt > 0.001f)
-                {
-                    if (levelDb > threshDb)
-                        targetGrDb = (levelDb - threshDb) * (1.0f - 1.0f / ratio);
-                    else
-                        targetGrDb = -juce::jmin(maxUpwardBoostDb, (threshDb - levelDb) * (1.0f - 1.0f / upwardRatio));
-                }
-
-                const float coeff = targetGrDb > compEnvelopeDb ? attackCoeff : releaseCoeff;
-                compEnvelopeDb = targetGrDb + coeff * (compEnvelopeDb - targetGrDb);
-                const float grGain = juce::Decibels::decibelsToGain(-compEnvelopeDb);
-
-                for (int ch = 0; ch < numCh; ++ch)
-                {
-                    auto* data = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
-                    const float dry = data[i];
-                    // grGain can already be > 1 here (upward compression on
-                    // quiet material); the fixed makeup on top of that is
-                    // deliberately generous, so a tanh ceiling on the wet
-                    // path keeps the dry/wet blend below from ever
-                    // exceeding the dry signal's own headroom by much.
-                    const float wet = std::tanh(dry * grGain * makeupGain);
-                    float s = dry * (1.0f - compAmt) + wet * compAmt;
-                    if (driveDbNow > 0.001f)
-                        s = std::tanh(s * driveK) * driveNorm;
-                    data[i] = s;
-                }
+                auto* data = bufferToFill.buffer->getWritePointer(ch, bufferToFill.startSample);
+                for (int i = 0; i < n; ++i)
+                    data[i] = std::tanh(data[i] * driveK) * driveNorm;
             }
         }
     }

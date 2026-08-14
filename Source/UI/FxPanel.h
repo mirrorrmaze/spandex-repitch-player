@@ -79,7 +79,7 @@ private:
     LabeledKnob inputGain { "Input (dB)" };
     LabeledKnob outputGain { "Output (dB)" };
     LabeledKnob driveKnob { "Drive (dB)" };
-    LabeledKnob compKnob { "Compression" };
+    LabeledKnob clipKnob { "Clip" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FxPanel)
 };

@@ -441,14 +441,14 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
             + " ratio=" + juce::String(maxJumpNearToggle / juce::jmax(1.0e-6f, maxJumpElsewhere), 2)
             + " (expect ratio close to 1 - a hard-gated toggle would spike far above baseline)");
 
-        // Drive/Compression bus glue: bypass (both at 0) must be transparent
-        // - the new stage shouldn't touch anything by default. Drive should
-        // keep the signal's peak bounded even pushed to maximum (the tanh
-        // waveshaper's whole point). Compression, on a signal that sits
-        // above its fixed -18dB threshold, should measurably reduce peak
-        // level relative to bypass even after its own +6dB makeup gain -
-        // a pure makeup-gain bug (no real gain reduction) would leave peak
-        // unchanged or louder instead of quieter.
+        // Drive/Clip bus glue: bypass (both at 0) must read as transparent
+        // - Clip's own STFT always runs underneath (like Smudge/Lossy), so
+        // "transparent" here means close to baseline over a full second's
+        // RMS average, not sample-exact (the first ~1024-sample startup
+        // transient before the window reaches steady state is expected and
+        // negligible against 44100 samples). Drive should keep the
+        // signal's peak bounded even pushed to maximum (the tanh
+        // waveshaper's whole point).
         auto renderPeak = [&](int numSamples) -> float
         {
             juce::AudioBuffer<float> buf(2, numSamples);
@@ -470,11 +470,11 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
         eqSrc.play();
 
         fx.setDriveDb(0.0f);
-        fx.setCompAmount(0.0f);
+        fx.setClipAmount(0.0f);
         eqSrc.setNextReadPosition(0);
         const float bypassRms = renderRms(oneSecond);
-        juce::Logger::writeToLog("drivecomptest: bypass_rms=" + juce::String(bypassRms, 4)
-            + " baseline=" + juce::String(baseline, 4) + " (expect ~identical - bypass must be transparent)");
+        juce::Logger::writeToLog("drivecliptest: bypass_rms=" + juce::String(bypassRms, 4)
+            + " baseline=" + juce::String(baseline, 4) + " (expect close to baseline - bypass must read as transparent)");
 
         eqSrc.setNextReadPosition(0);
         const float baselinePeak = renderPeak(oneSecond);
@@ -482,22 +482,22 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
         fx.setDriveDb(15.0f);
         eqSrc.setNextReadPosition(0);
         const float drivePeak = renderPeak(oneSecond);
-        juce::Logger::writeToLog("drivecomptest: baselinePeak=" + juce::String(baselinePeak, 4)
+        juce::Logger::writeToLog("drivecliptest: baselinePeak=" + juce::String(baselinePeak, 4)
             + " maxDrivePeak=" + juce::String(drivePeak, 4)
             + " (expect bounded near/below ~1.0, not blowing up past it)");
         fx.setDriveDb(0.0f);
 
-        // Compression runs at a fixed aggressive setting (OTT-style) with
-        // an RMS-style detector and both downward (loud->down) and upward
-        // (quiet->up) gain, and the knob is purely a dry/wet blend. The
-        // concrete complaint that motivated this over the first cut (a
-        // peak-detector, downward-only version) was "doesn't do much" -
-        // the real test of that isn't a level check on a single steady
-        // tone, it's whether the gap between a loud passage and a quiet
-        // one actually shrinks. Build a synthetic loud-then-quiet tone and
-        // check the loud/quiet RMS ratio collapses at full compAmt, and
-        // that the quiet half's own RMS rises (confirming the upward side
-        // is doing real work, not just the loud half getting squashed).
+        // Clip works in the frequency domain: each hop's per-bin magnitude
+        // is capped to an Amount-controlled ceiling (an absolute reference
+        // relative to the window's own full scale, not scaled to the
+        // input's level) with makeup gain added back proportionally. That
+        // asymmetry - a fixed ceiling rather than a level-relative
+        // threshold - means loud content (bins mostly above the ceiling)
+        // gets clipped down while quiet content (bins mostly already below
+        // it) mainly just picks up the makeup gain, so the loud/quiet gap
+        // should still collapse even though the mechanism isn't the old
+        // compressor's up/down gain-reduction envelope. Same synthetic
+        // loud-then-quiet tone and same ratio check as before still applies.
         {
             const double sr = loaded.sourceSampleRate;
             const int halfSamples = (int) (0.5 * sr);
@@ -534,25 +534,25 @@ void runSelfTest(const juce::File& inputFile, const juce::File& outputDir)
                 return renderRms(halfSamples);
             };
 
-            fx.setCompAmount(0.0f);
+            fx.setClipAmount(0.0f);
             const float bypassLoudRms = rmsOfHalf(true);
             const float bypassQuietRms = rmsOfHalf(false);
 
-            fx.setCompAmount(1.0f);
-            const float compLoudRms = rmsOfHalf(true);
-            const float compQuietRms = rmsOfHalf(false);
+            fx.setClipAmount(1.0f);
+            const float clipLoudRms = rmsOfHalf(true);
+            const float clipQuietRms = rmsOfHalf(false);
 
             const float bypassRatio = bypassLoudRms / juce::jmax(1.0e-6f, bypassQuietRms);
-            const float compRatio = compLoudRms / juce::jmax(1.0e-6f, compQuietRms);
+            const float clipRatio = clipLoudRms / juce::jmax(1.0e-6f, clipQuietRms);
 
-            juce::Logger::writeToLog("drivecomptest: dynamicRange bypassRatio=" + juce::String(bypassRatio, 2)
-                + " compRatio=" + juce::String(compRatio, 2)
-                + " quietRms bypass=" + juce::String(bypassQuietRms, 4) + " comp=" + juce::String(compQuietRms, 4)
-                + " (expect compRatio well below bypassRatio - the loud/quiet gap shrinking - and"
-                + " compQuietRms clearly above bypassQuietRms - upward compression actually lifting"
-                + " the quiet half, not just the loud half getting squashed)");
+            juce::Logger::writeToLog("drivecliptest: dynamicRange bypassRatio=" + juce::String(bypassRatio, 2)
+                + " clipRatio=" + juce::String(clipRatio, 2)
+                + " quietRms bypass=" + juce::String(bypassQuietRms, 4) + " clip=" + juce::String(clipQuietRms, 4)
+                + " (expect clipRatio well below bypassRatio - the loud/quiet gap shrinking - and"
+                + " clipQuietRms clearly above bypassQuietRms - the makeup gain applied to bins that"
+                + " never needed clipping lifts the quiet half, not just the loud half getting capped)");
 
-            fx.setCompAmount(0.0f);
+            fx.setClipAmount(0.0f);
         }
     }
 

@@ -57,6 +57,7 @@ target_sources(SPANDEX PRIVATE
     Source/Audio/EffectsChain.cpp
     Source/Audio/SmudgeProcessor.cpp
     Source/Audio/LossyProcessor.cpp
+    Source/Audio/SpectralClipperProcessor.cpp
     Source/Audio/GranularDelay.cpp
     Source/Audio/FreqShifter.cpp
     Source/UI/WaveformComponent.cpp

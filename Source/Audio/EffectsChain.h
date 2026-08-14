@@ -6,6 +6,7 @@
 #include "GranularDelay.h"
 #include "FreqShifter.h"
 #include "LossyProcessor.h"
+#include "SpectralClipperProcessor.h"
 
 // Sits between StretchAudioSource and the device output: an 8-band
 // parametric EQ (Ableton EQ Eight / FabFilter Pro-Q style band types), a
@@ -151,15 +152,21 @@ public:
     void setOutputGainDb(float db) { outputGainDb.store(db); }
     float getOutputGainDb() const { return outputGainDb.load(); }
 
-    // Drive/Compression bus glue, applied after everything else (Reverb)
-    // and before the final output trim. Drive is a tanh waveshaper (0dB =
-    // bypassed/clean); Compression is a single-knob feedforward compressor
-    // (fixed threshold, ratio and auto-makeup scale with the knob) so it's
-    // one control instead of threshold/ratio/attack/release/makeup.
+    // Drive/Clip bus glue, applied after everything else (Reverb) and
+    // before the final output trim. Drive is a tanh waveshaper (0dB =
+    // bypassed/clean); Clip is a frequency-domain hard clipper (see
+    // SpectralClipperProcessor) - replaces the old single-knob compressor,
+    // which read as "doesn't do much" per direct feedback; this reads as
+    // clearly, deliberately more distorted instead.
     void setDriveDb(float db) { driveDb.store(juce::jlimit(0.0f, 15.0f, db)); }
     float getDriveDb() const { return driveDb.load(); }
-    void setCompAmount(float amount01) { compAmount.store(juce::jlimit(0.0f, 1.0f, amount01)); }
-    float getCompAmount() const { return compAmount.load(); }
+    void setClipAmount(float amount01)
+    {
+        clipAmount.store(juce::jlimit(0.0f, 1.0f, amount01));
+        clipperL.setAmount(amount01);
+        clipperR.setAmount(amount01);
+    }
+    float getClipAmount() const { return clipAmount.load(); }
 
 private:
     void updateEqBandCoefficients(int index);
@@ -241,15 +248,9 @@ private:
     std::atomic<float> outputGainDb { 0.0f };
 
     std::atomic<float> driveDb { 0.0f };
-    std::atomic<float> compAmount { 0.0f };
-    // Smoothed gain-reduction envelope, in dB (positive = reduction,
-    // negative = upward boost) - only touched from the audio thread under
-    // `lock`, so a plain float is fine.
-    float compEnvelopeDb = 0.0f;
-    // Short RMS-style loudness detector (mean-square, not yet sqrt'd) the
-    // compressor reads instead of the instantaneous sample - see the bus
-    // glue stage in getNextAudioBlock() for why.
-    float compRmsEnvelope = 0.0f;
+    std::atomic<float> clipAmount { 0.0f };
+    SpectralClipperProcessor clipperL, clipperR;
+    std::vector<float> clipperScratchL, clipperScratchR;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EffectsChain)
 };

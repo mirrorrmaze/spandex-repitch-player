@@ -25,8 +25,8 @@ built-in FX chain and 8-band EQ before exporting or recording the result in your
 
 **FX chain**: Reverb, Granular Delay, Frequency Shifter/Ring Modulator, Smudge (a spectral
 freeze/smear effect), Lossy (a spectral codec-artifact emulator, Goodhertz Lossy style, for
-"bad cellphone codec" degradation), and a Drive/Compression bus stage (OTT-style aggressive
-compressor blended in via a dry/wet knob, plus tanh saturation).
+"bad cellphone codec" degradation), and a Drive/Clip bus stage (tanh saturation plus a
+frequency-domain hard clipper for a harsher, more distorted character than plain compression).
 
 ![SPANDEX EQ tab](docs/screenshot-eq.png)
 
@@ -51,7 +51,7 @@ build runs via GitHub Actions on every push to `main` (see `.github/workflows/ma
 3. **Pitch**/**Speed**: toggle **Link (Re-Pitch)** for turntable-style linked control, or leave it
    unlinked and pick a **Warp Mode** for independent pitch/time.
 4. **FX tab**: dial in Reverb, Granular Delay, Frequency Shifter, Smudge, and Lossy (each has its
-   own on/off toggle), plus Input/Output trim and Drive/Compression on the Gain card.
+   own on/off toggle), plus Input/Output trim and Drive/Clip on the Gain card.
 5. **EQ tab**: drag a band's node on the graph to set frequency/gain, scroll on a node for Q, or
    use the strip below for exact values.
 6. **Export** (Standalone): pick a format and click Export... to render offline at full quality.
@@ -92,11 +92,16 @@ as two independent safety nets against runaway buildup at extreme density/feedba
 Smudge is a streaming STFT where each bin's complex value blends with what was there last frame
 (`held = held*amount + new*(1-amount)`) rather than replacing it outright; changing its window
 size (Rate) mid-stream is sandwiched between a fade-out/fade-in so resizing the FFT doesn't click.
-Drive/Compression is deliberately *not* a gentle compressor with a knob that scales
-ratio/makeup -- it's a fixed aggressive compressor (low threshold, high ratio, fast attack/
-release) blended against the dry signal by the knob, the way OTT's own "Depth" control works,
-so it reads as clearly audible as soon as it's dialed in rather than staying subtle throughout
-its range. Lossy is a streaming STFT (1024-point window, 256-sample hop), not a time-domain
+Drive is a straightforward tanh waveshaper (0dB = bypassed/clean). Clip is a second streaming
+STFT alongside Smudge/Lossy: each hop's per-bin magnitude is capped to an Amount-controlled
+ceiling (an absolute reference against the window's own full scale, not scaled to the input's
+level) and blended against the dry spectrum by that same knob, with makeup gain added back in
+proportionally. Because the ceiling doesn't adapt to level, loud content (bins mostly above it)
+gets clipped down while quiet content (bins mostly already below it) mainly just picks up the
+makeup gain -- so it still reads as the loud/quiet gap collapsing, the way the compressor it
+replaced did, but through per-frequency clipping instead of one shared gain-reduction envelope,
+which lands as more overtly distorted/present rather than just "less dynamic." Lossy is a
+streaming STFT (1024-point window, 256-sample hop), not a time-domain
 bitcrusher - each hop's magnitude spectrum is quantized to a `Bits`-controlled number of steps
 (relative to the window's own full-scale reference, not raw FFT units, so the control's meaning
 doesn't depend on window size) and each bin's phase is randomized by `Jitter` * up to +/-pi. That
