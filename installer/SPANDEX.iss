@@ -3,7 +3,7 @@
 ; Compile with: ISCC.exe installer\SPANDEX.iss
 
 #define MyAppName "SPANDEX"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "SPANDEX"
 #define ReleaseDir "..\build\SPANDEX_artefacts\Release"
 
