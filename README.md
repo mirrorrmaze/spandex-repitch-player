@@ -3,20 +3,28 @@
 A repitch/warp player VST3/Standalone plugin built with JUCE. Load a track, scrub its waveform,
 and stretch it in real time -- either linked "Re-Pitch" (pitch and speed move together, classic
 turntable-style) or independent Warp modes powered by Rubber Band -- then shape it through a
-built-in FX chain and 8-band EQ before exporting or recording the result in your DAW.
+built-in, freely-reorderable FX chain and 8-band EQ before exporting or recording the result in
+your DAW. See [CHANGELOG.md](CHANGELOG.md) for what's changed recently.
 
 ![SPANDEX Player tab](docs/screenshot-player.png)
 
 ## Features
 
-- **Waveform playback** with click/drag scrub, scroll-to-zoom, shift-drag to pan, and a
-  loop region (Loop In/Out) with a Sampler-style Loop Mode (Forward/Ping-Pong/Reverse) and a
-  true crossfade at the loop point, not just a click-avoiding dip.
+- **Waveform playback** with click/drag scrub, scroll-to-zoom, shift-drag to pan, and Ableton
+  Sampler-style markers dragged directly on the waveform: Sample Start/End trim the outer playable
+  range, and a loop brace (drag its edges to resize, drag its middle to shift the whole region)
+  nests inside it, with a Sampler-style Loop Mode (Forward/Ping-Pong/Reverse) and a true crossfade
+  at the loop point rather than a click-avoiding dip. **From Start** makes Play always retrigger
+  from the Sample Start marker instead of resuming; **Link** ties Loop Start to Sample Start so
+  dragging one drags the other.
 - **Pitch/Speed control**, either **Link (Re-Pitch)** (speed and pitch move together, like a
   turntable pitch fader) or independent via a selectable **Warp Mode** -- Beats (percussive),
   Tones (monophonic), Texture (pads/ambient), or Complex/Complex Pro (full mix).
+- **Reorderable FX chain** -- drag chips in a routing bar at the bottom of the FX tab to change
+  which order EQ/Reverb/Delay/Shifter/Smudge/Lossy/Gain process in, live.
 - **Runtime GUI themes** -- Default, Matrix (phosphor green terminal), and Amber Terminal,
-  switchable from the "..." menu without restarting.
+  switchable from the "..." menu without restarting. The same menu surfaces an update notice
+  (checked quietly on launch against GitHub Releases) if a newer version is out.
 - **Export** (Standalone only -- inside a DAW, just record/resample SPANDEX's output on another
   track): WAV/AIFF/FLAC/MP3 at full offline quality, matching whatever pitch/speed/warp/FX
   settings are currently dialed in.
@@ -46,12 +54,17 @@ build runs via GitHub Actions on every push to `main` (see `.github/workflows/ma
 
 1. **Open...** (or drag a file onto the window) to load a track.
 2. Click or drag the waveform to seek/scrub; scroll to zoom, shift-drag to pan, double-click to
-   reset the view. Set **Loop In**/**Loop Out** at the current position and toggle **Loop** to
-   repeat that region -- raise **X-fade** if you hear a click at the loop point.
+   reset the view. Drag the **[**/**]** flags at the top edges to set Sample Start/End (the outer
+   playable range), or use the **Loop In**/**Loop Out** buttons/edge-drag for the loop brace nested
+   inside it -- drag the brace's middle to shift the whole loop without resizing it. Toggle **Loop**
+   to repeat that region, pick a **Loop Mode** (→ Forward / ↔ Ping-Pong / ← Reverse), raise
+   **X-fade** if you hear a click at the loop point, and turn on **From Start**/**Link** for
+   sampler-style retriggering/marker-coupling behavior.
 3. **Pitch**/**Speed**: toggle **Link (Re-Pitch)** for turntable-style linked control, or leave it
    unlinked and pick a **Warp Mode** for independent pitch/time.
 4. **FX tab**: dial in Reverb, Granular Delay, Frequency Shifter, Smudge, and Lossy (each has its
-   own on/off toggle), plus Input/Output trim and Drive/Clip on the Gain card.
+   own on/off toggle), plus Input/Output trim and Drive/Clip on the Gain card. Drag the chips in
+   the routing bar at the bottom to change the processing order.
 5. **EQ tab**: drag a band's node on the graph to set frequency/gain, scroll on a node for Q, or
    use the strip below for exact values.
 6. **Export** (Standalone): pick a format and click Export... to render offline at full quality.
@@ -62,6 +75,21 @@ The processing graph is `StretchAudioSource -> EffectsChain -> ResamplingAudioSo
 identically between the Standalone app and the VST3 (`SpandexAudioProcessor` just drives the
 same `AudioEngine` the Standalone's `MainComponent` owns, so there's exactly one code path for
 DSP regardless of which format you're running).
+
+`EffectsChain` dispatches its 7 reorderable stages (EQ, Reverb, Delay, Shifter, Smudge, Lossy,
+Gain) through a `std::vector<FxStage> chainOrder` instead of a hardcoded sequence -- each stage's
+processing logic is unchanged, only *when* it runs is now a runtime setting
+(`setChainOrder`/`getChainOrder`), driven by dragging chips in `FxRoutingBar`. Input/Output trim
+stay fixed first/last regardless of the chosen order, since they're conceptually wrapping the
+whole chain rather than being "an effect" the same way the other 7 are.
+
+Ableton Sampler-style Start/End trim markers (`StretchAudioSource::setTrimStart`/`setTrimEnd`)
+bound the outer playable range independently of the loop brace nested inside it -- a loop region
+left unset defaults to the trim range rather than the whole file, and an explicit region wider
+than the trim clamps inside it. Both markers, and the loop brace's edges and interior, are
+click-dragged directly on the waveform (`WaveformComponent`'s hit-testing picks whichever marker
+the cursor is nearest, with a distinct drag mode for shifting the whole loop by dragging its
+middle rather than resizing an edge).
 
 **Re-Pitch mode** bypasses Rubber Band entirely and reads the source buffer at a resampled rate
 with linear interpolation -- cheap and exact, at the cost of pitch and speed being locked
@@ -122,6 +150,14 @@ Every DSP change is verified through a hidden `--selftest <input.wav> <outputDir
 assertions (RMS levels, peak tracking, frequency detection, stability under worst-case
 parameters) rather than relying on listening or screenshots.
 
+`UpdateChecker` runs a one-shot background check (`juce::Thread` + `juce::AsyncUpdater`) against
+GitHub's Releases API on launch, comparing the release's `tag_name` against the version this build
+was compiled with. It's check-only, never an auto-updater -- a running VST3's DLL is locked by its
+host, so a plugin can't replace its own file, and these installers aren't code-signed, so silently
+downloading and running one would be exactly the pattern AV/SmartScreen/Gatekeeper flag as
+malware. Every failure path (no network, GitHub down, rate-limited, no releases published,
+malformed JSON) just means nothing is shown -- never a blocking dialog.
+
 ## Building from source
 
 Requires CMake 3.22+ and MSVC (Visual Studio 2022 Build Tools) on Windows, or Xcode's clang on
@@ -150,14 +186,17 @@ To build the Windows installer, install [Inno Setup](https://jrsoftware.org/isin
 
 ```
 Source/
-  Audio/               StretchAudioSource, EffectsChain, per-effect DSP (GranularDelay,
-                        SmudgeProcessor, FreqShifter, LossyProcessor), AudioEngine, AudioFileLoader
+  Audio/               StretchAudioSource, EffectsChain (7-stage reorderable chain, see FxStage),
+                        per-effect DSP (GranularDelay, SmudgeProcessor, FreqShifter,
+                        LossyProcessor, SpectralClipperProcessor), AudioEngine, AudioFileLoader
   Export/               offline render pipeline (ExportEngine)
-  UI/                    waveform, transport/loop/pitch/speed/warp controls, FX/EQ panels,
-                          AppLookAndFeel + Theme registry
+  UI/                    waveform (drag-to-set Start/End/loop markers), transport/loop/pitch/
+                          speed/warp controls, FxRoutingBar (drag-to-reorder FX chips), FX/EQ
+                          panels, AppLookAndFeel + Theme registry
   PluginProcessor/Editor  VST3 wrapper around AudioEngine/MainComponent
   MainComponent           top-level layout shared by Standalone and VST3
   SelfTest                offline DSP verification harness (--selftest CLI flag)
+  UpdateChecker           background GitHub Releases check on launch, notification-only
 installer/               Inno Setup installer script (Windows)
 .github/workflows/       macOS CI build
 ```

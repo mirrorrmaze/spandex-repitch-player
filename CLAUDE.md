@@ -101,3 +101,11 @@ approximated at chunk/block granularity in the Warp path.
   achieved gain reduction far below what the ratio implied - fixed with an RMS-style detector +
   upward compression, verified via a before/after dynamic-range-ratio self-test) rather than just
   turning numbers up.
+- **Keep `README.md` and `CHANGELOG.md` current with big changes** - new/reworked features, DSP
+  behavior changes, and UI redesigns get a `CHANGELOG.md` entry and a `README.md` update
+  (Features list, usage instructions, "How it works" section) in the same pass as the code change,
+  not as a separate later cleanup. When a change affects what's on screen (new controls, a
+  redesigned panel, a new tab/section), the `docs/screenshot-*.png` files it's paired with in the
+  README need refreshing too - ask the user for updated screenshots rather than faking it with an
+  empty/unloaded-file capture, since the existing ones show a real loaded track and populated
+  controls.
