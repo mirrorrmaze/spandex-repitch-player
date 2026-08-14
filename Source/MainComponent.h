@@ -12,6 +12,7 @@
 #include "UI/HeaderTabs.h"
 #include "UI/FxPanel.h"
 #include "UI/EqPanel.h"
+#include "UpdateChecker.h"
 
 class MainComponent : public juce::Component,
                        public juce::FileDragAndDropTarget,
@@ -50,6 +51,7 @@ private:
     ExportPanel exportPanel;
 #endif
     HeaderTabs headerTabs;
+    UpdateChecker updateChecker;
     FxPanel fxPanel { audioEngine.getEffectsChain() };
     EqPanel eqPanel { audioEngine.getEffectsChain() };
 

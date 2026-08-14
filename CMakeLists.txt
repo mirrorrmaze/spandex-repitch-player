@@ -49,6 +49,7 @@ target_sources(SPANDEX PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/MainComponent.cpp
+    Source/UpdateChecker.cpp
     Source/SelfTest.cpp
     Source/Audio/AudioFileLoader.cpp
     Source/Audio/StretchAudioSource.cpp
@@ -83,6 +84,8 @@ target_compile_definitions(SPANDEX PRIVATE
     # released) - this disables a JUCE build-time check that only matters
     # for VST2<->VST3 parameter-automation migration.
     JUCE_VST3_CAN_REPLACE_VST2=0
+    # For UpdateChecker's version comparison against GitHub Releases' tag_name.
+    SPANDEX_VERSION="${PROJECT_VERSION}"
 )
 
 target_link_libraries(SPANDEX
