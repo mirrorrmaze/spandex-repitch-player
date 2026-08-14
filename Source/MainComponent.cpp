@@ -89,8 +89,32 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
     // set a point to the current playhead, dragging repositions it freely.
     waveform.onDragLoopInSeconds = [this](double seconds) { audioEngine.setLoopInSeconds(seconds); };
     waveform.onDragLoopOutSeconds = [this](double seconds) { audioEngine.setLoopOutSeconds(seconds); };
-    waveform.onDragTrimStartSeconds = [this](double seconds) { audioEngine.setTrimStartSeconds(seconds); };
+    waveform.onDragTrimStartSeconds = [this](double seconds)
+    {
+        if (loopControls.linkLoopToStartToggle.getToggleState() && audioEngine.hasLoopRegion())
+        {
+            const double delta = seconds - audioEngine.getTrimStartSeconds();
+            audioEngine.setLoopInSeconds(audioEngine.getLoopInSeconds() + delta);
+        }
+        audioEngine.setTrimStartSeconds(seconds);
+    };
     waveform.onDragTrimEndSeconds = [this](double seconds) { audioEngine.setTrimEndSeconds(seconds); };
+    waveform.onDragLoopRegionSeconds = [this](double newIn, double newOut)
+    {
+        // Whichever edge is moving away from the other gets set first, so
+        // a single large drag step (fast mouse movement) can never pass
+        // through a momentarily-inverted loopStart > loopEnd region.
+        if (newIn >= audioEngine.getLoopInSeconds())
+        {
+            audioEngine.setLoopOutSeconds(newOut);
+            audioEngine.setLoopInSeconds(newIn);
+        }
+        else
+        {
+            audioEngine.setLoopInSeconds(newIn);
+            audioEngine.setLoopOutSeconds(newOut);
+        }
+    };
 
     transport.openButton.onClick = [this]
     {
@@ -116,9 +140,15 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
             return;
 
         if (audioEngine.isPlaying())
+        {
             audioEngine.pause();
+        }
         else
+        {
+            if (loopControls.playFromStartToggle.getToggleState())
+                audioEngine.setPositionSeconds(audioEngine.getTrimStartSeconds());
             audioEngine.play();
+        }
 
         transport.setPlayingState(audioEngine.isPlaying());
     };
@@ -141,15 +171,9 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
     {
         audioEngine.setLooping(loopControls.loopToggle.getToggleState());
     };
-    loopControls.loopModeBox.onChange = [this]
+    loopControls.onModeChanged = [this](StretchAudioSource::LoopMode mode)
     {
-        using LoopMode = StretchAudioSource::LoopMode;
-        switch (loopControls.loopModeBox.getSelectedId())
-        {
-            case 2:  audioEngine.setLoopMode(LoopMode::PingPong); break;
-            case 3:  audioEngine.setLoopMode(LoopMode::Reverse);  break;
-            default: audioEngine.setLoopMode(LoopMode::Forward);  break;
-        }
+        audioEngine.setLoopMode(mode);
     };
     loopControls.crossfadeSlider.onValueChange = [this]
     {
@@ -318,12 +342,12 @@ void MainComponent::resized()
     transport.setBounds(transportArea);
 
 #if JucePlugin_Build_Standalone
-    auto exportArea = bounds.removeFromBottom(60).reduced(8, 4);
-    loopControls.setBounds(exportArea.removeFromRight(480));
+    auto exportArea = bounds.removeFromBottom(90).reduced(8, 4);
+    loopControls.setBounds(exportArea.removeFromRight(520));
     exportPanel.setBounds(exportArea);
 #else
-    auto loopArea = bounds.removeFromBottom(60).reduced(8, 4);
-    loopControls.setBounds(loopArea.removeFromRight(480));
+    auto loopArea = bounds.removeFromBottom(90).reduced(8, 4);
+    loopControls.setBounds(loopArea.removeFromRight(520));
 #endif
 
     controlsCard = bounds.removeFromBottom(120).reduced(8, 4);
