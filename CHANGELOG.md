@@ -4,6 +4,15 @@ Notable changes to SPANDEX, newest first. Not every commit gets an entry -
 this tracks user-facing behavior and feature changes, not internal
 refactors or doc tweaks.
 
+## 2026-08-14 (v0.2.1)
+
+- **Fix**: FX tab knobs could get clipped or overflow their card at smaller
+  window sizes - most visibly on Freq Shifter, whose mode dropdown ate
+  vertical space its sibling cards didn't need. The FX panel now lays out
+  every card at its natural, full-size dimensions and scrolls vertically
+  instead of shrinking or hiding controls when the window's too short to
+  show everything at once.
+
 ## 2026-08-14
 
 - **Fix**: spacebar Play/Pause wasn't honoring the "From Start" toggle the
