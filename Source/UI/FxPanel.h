@@ -19,6 +19,14 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // The height every card needs to lay out its knobs at full size (see
+    // layoutSection) - below this, cards start shrinking their knobs to
+    // avoid overflowing. MainComponent hosts this panel in a Viewport and
+    // never gives it less than this, so knobs stay full size and a window
+    // too short to show everything scrolls instead of squeezing controls
+    // down to illegibility.
+    static constexpr int kMinContentHeight = 500;
+
 private:
     void refreshFromEngine();
     void timerCallback() override;

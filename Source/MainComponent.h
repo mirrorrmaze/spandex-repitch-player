@@ -59,6 +59,11 @@ private:
     HeaderTabs headerTabs;
     UpdateChecker updateChecker;
     FxPanel fxPanel { audioEngine.getEffectsChain() };
+    // FxPanel always lays out at its natural size (FxPanel::kMinContentHeight
+    // or taller) rather than shrinking its knobs to fit whatever's available -
+    // this Viewport is what actually adapts to the window, scrolling instead
+    // of squeezing controls down when there isn't room to show everything.
+    juce::Viewport fxViewport;
     EqPanel eqPanel { audioEngine.getEffectsChain() };
 
     std::unique_ptr<juce::FileChooser> fileChooser;

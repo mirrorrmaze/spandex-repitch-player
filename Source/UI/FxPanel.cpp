@@ -296,24 +296,43 @@ void FxPanel::layoutSection(juce::Rectangle<int> area, juce::Label& title, juce:
 
     area.removeFromTop(10);
 
+    // The mode box (if any) claims a small guaranteed strip off the bottom
+    // first, before the knobs get laid out - sized to stay usable (a real
+    // clickable dropdown, not a sliver) but small enough that a card with
+    // one only gives up a little knob height, not a lot. Reserving it here,
+    // up front, means it can never be squeezed to nothing the way it was
+    // when it only got whatever the knob row happened to leave over - at
+    // the smallest window size that leftover was zero. Sections without a
+    // mode box (the majority) skip this entirely and keep the full card
+    // height for their knobs, same as before Freq Shifter ever grew one.
+    constexpr int modeBoxHeight = 22, modeBoxGap = 6;
+    juce::Rectangle<int> modeBoxArea;
     if (modeBox != nullptr)
-        modeBox->setBounds(area.removeFromTop(26));
-    area.removeFromTop(modeBox != nullptr ? 10 : 0);
+        modeBoxArea = area.removeFromBottom(modeBoxHeight + modeBoxGap).removeFromBottom(modeBoxHeight);
 
     // No wrapping, ever: knobs share the row's width with flexGrow so a
-    // section can never spill a row into the space below it (the bug that
+    // section can never spill into the space below it (the bug that
     // previously made Reverb's Width knob and Delay's Mix knob overlap the
     // section drawn underneath). withMinWidth stops them shrinking below
     // what their own text box needs - past that point the row overflows
-    // the card rather than squashing into illegible/clipped digits, and
-    // the editor's resize floor (see PluginEditor) is sized so that
-    // shouldn't be reachable in practice.
+    // the card rather than squashing into illegible/clipped digits.
+    //
+    // Height is whatever's actually left in `area` (capped at 112, the
+    // knob's natural size) so a knob row can never request more height than
+    // its card has and get pushed past the card's bottom edge - it shrinks
+    // to fit instead, same as the width already did.
+    constexpr int knobRowHeight = 112;
+    const float knobHeight = (float) juce::jlimit(1, knobRowHeight, area.getHeight());
+
     juce::FlexBox fb;
     fb.flexDirection = juce::FlexBox::Direction::row;
     fb.justifyContent = juce::FlexBox::JustifyContent::flexStart;
     for (auto* knob : knobs)
-        fb.items.add(juce::FlexItem(*knob).withFlex(1.0f).withMinWidth(52.0f).withMaxWidth(105).withHeight(112).withMargin(4));
-    fb.performLayout(area);
+        fb.items.add(juce::FlexItem(*knob).withFlex(1.0f).withMinWidth(52.0f).withMaxWidth(105).withHeight(knobHeight).withMargin(4));
+    fb.performLayout(area.removeFromTop((int) knobHeight));
+
+    if (modeBox != nullptr)
+        modeBox->setBounds(modeBoxArea);
 }
 
 void FxPanel::resized()

@@ -215,7 +215,9 @@ MainComponent::MainComponent(AudioEngine& engineToUse)
         resized();
     };
     addAndMakeVisible(headerTabs);
-    addAndMakeVisible(fxPanel);
+    fxViewport.setViewedComponent(&fxPanel, false);
+    fxViewport.setScrollBarsShown(true, false); // vertical only - width already adapts
+    addAndMakeVisible(fxViewport);
     addAndMakeVisible(eqPanel);
     updateTabVisibility();
 
@@ -360,8 +362,20 @@ void MainComponent::resized()
             waveform.setBounds(bounds.reduced(4));
             break;
         case HeaderTabs::Tab::Fx:
-            fxPanel.setBounds(bounds);
+        {
+            fxViewport.setBounds(bounds);
+            // Computed directly from `bounds`, not from the viewport's own
+            // getMaximumVisibleWidth()/scrollbar state - that would still be
+            // reflecting fxPanel's *previous* size at this point (the
+            // viewport only recalculates its scrollbar once the viewed
+            // component's size actually changes), so it'd be a stale read
+            // the first time scrolling becomes newly necessary or newly
+            // unnecessary.
+            const int contentHeight = juce::jmax(FxPanel::kMinContentHeight, bounds.getHeight());
+            const bool willScroll = contentHeight > bounds.getHeight();
+            fxPanel.setSize(bounds.getWidth() - (willScroll ? fxViewport.getScrollBarThickness() : 0), contentHeight);
             break;
+        }
         case HeaderTabs::Tab::Eq:
             eqPanel.setBounds(bounds);
             break;
@@ -374,7 +388,7 @@ void MainComponent::updateTabVisibility()
 {
     const auto tab = headerTabs.getSelectedTab();
     waveform.setVisible(tab == HeaderTabs::Tab::Player);
-    fxPanel.setVisible(tab == HeaderTabs::Tab::Fx);
+    fxViewport.setVisible(tab == HeaderTabs::Tab::Fx);
     eqPanel.setVisible(tab == HeaderTabs::Tab::Eq);
     loopControls.setVisible(tab == HeaderTabs::Tab::Player);
 }
