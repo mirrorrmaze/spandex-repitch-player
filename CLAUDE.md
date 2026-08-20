@@ -57,21 +57,11 @@ primary way to verify DSP/logic changes in this project** - add a new assertion 
   <notes>`), not just `gh release upload ... --clobber` onto an old tag. Matches how
   Multiband Convolver's own update checker is set up (proper incrementing `vX.Y.Z` releases).
   The old `v0.1.0-macos-test` tag is left in place as history, not deleted.
-- **Distribution**: finished installers (both platforms) get copied to
-  `D:\Dropbox\01 Main\06 Devices\VST PROJECT ALPHA INSTALLERS\SPANDEX` - the user's standing
-  location for installers they hand to friends for testing (the parent `VST PROJECT ALPHA
-  INSTALLERS` folder holds one subfolder per product - MultibandConvolver's is a sibling
-  project's, at `...\Multiband Convolver`, kept in the same loose-files-plus-`README.txt`
-  structure, no zipping). Filenames there bake in the version - `SPANDEX-Setup-Windows-vX.Y.Z.exe`
-  / `SPANDEX-Installer-macOS-arm64-vX.Y.Z.pkg` - so testers can tell at a glance which build they
-  have; **remove the previous version's files when dropping a new one** (only the current release
-  lives in the tester folder - older builds stay available via GitHub Releases if ever needed,
-  they just aren't cluttering the handoff folder). Rename the GitHub Release assets to match the
-  same versioned pattern before/after `gh release create` (`gh release upload`/`delete-asset` if
-  fixing an already-published release). That folder also holds a brief `README.txt` for testers
-  (what SPANDEX is, install steps per platform - keep the referenced filenames in sync with
-  whatever's actually in the folder, quick-start usage, what feedback is useful) - update it when
-  install steps, major features, or the version changes.
+- **Distribution**: GitHub Releases is the one and only distribution channel now that the repo's
+  shared with collaborators. Rename the release assets to match the versioned pattern
+  (`SPANDEX-Setup-Windows-vX.Y.Z.exe` / `SPANDEX-Installer-macOS-arm64-vX.Y.Z.pkg`) so it's
+  obvious at a glance which build is which (`gh release upload`/`delete-asset` if fixing an
+  already-published release).
 
 ## Architecture
 

@@ -42,11 +42,9 @@ Roughly in order:
    higher to compare against). Fixed by adopting proper incrementing releases (`gh release create
    vX.Y.Z ...`), matching how Multiband Convolver already did it.
 
-5. **Installer naming + Dropbox structure, standardized across both projects.** Installer
-   filenames now bake in the version (`SPANDEX-Setup-Windows-v0.2.1.exe`, not a bare
-   `SPANDEX-Setup-Windows.exe`), and Multiband Convolver's Dropbox folder — previously a single
-   zipped bundle — was restructured to match SPANDEX's flat, loose-files-plus-`README.txt`
-   layout. GitHub Release asset names were renamed to match.
+5. **Installer naming standardized.** Installer filenames now bake in the version
+   (`SPANDEX-Setup-Windows-v0.2.1.exe`, not a bare `SPANDEX-Setup-Windows.exe`), and GitHub
+   Release asset names were renamed to match.
 
 6. **FX panel clipping/shrinking bug — the multi-round fix.** Worth walking through since it's a
    good example of how the iteration actually went:
@@ -72,8 +70,8 @@ Roughly in order:
    - Each round was verified against the *user's own screenshot* of the actual running build, not
      assumed fixed from code review alone — see the testing convention below.
 
-7. **Shipped as v0.2.1**, with a GitHub Release, updated Dropbox installers, and a CHANGELOG
-   entry — see "Where the update notice appears" and the versioning convention below.
+7. **Shipped as v0.2.1**, with a GitHub Release and a CHANGELOG entry — see "Where the update
+   notice appears" and the versioning convention below.
 
 ## Where the update notice appears
 
@@ -100,21 +98,15 @@ These are the habits worth keeping if you're working on this codebase with an AI
 - **Ask before pushing to `main` or publishing a release**, even when a fix is confirmed working
   locally — a push here triggers a real CI build and a release is a real, public, shared artifact.
   Once trust is established for a specific change, it's fine to say "go ahead" and have the whole
-  ship cycle (build → installer → GitHub Release → Dropbox update) happen in one go without
-  re-confirming every step.
+  ship cycle (build → installer → GitHub Release) happen in one go without re-confirming every step.
 - **Versioning is load-bearing, not cosmetic.** The update checker compares the compiled version
   against the *latest* GitHub Release tag — so any change worth shipping bumps
   `project(SPANDEX VERSION X.Y.Z)` in `CMakeLists.txt` (and the matching `MyAppVersion` in
   `installer/SPANDEX.iss`, and the `pkgbuild --version` in the macOS CI workflow — these three
   have drifted out of sync before; check all three when bumping) and publishes an actual new,
   higher-numbered release, not a `--clobber` overwrite onto an old tag.
-- **Installer filenames carry the version, and only the current version lives in the tester
-  Dropbox folder.** `D:\Dropbox\01 Main\06 Devices\VST PROJECT ALPHA INSTALLERS\<Product>\` holds
-  loose installer files (no zipping) plus a tester-facing `README.txt`, named like
-  `<Product>-Setup-Windows-vX.Y.Z.exe`. When a new version ships, the previous version's files get
-  removed from that folder — older builds stay recoverable from GitHub Releases if ever needed,
-  they just don't clutter the folder friends actually download from. This structure is meant to
-  stay identical across every plugin project, not just SPANDEX.
+- **Installer filenames carry the version** (`<Product>-Setup-Windows-vX.Y.Z.exe`, etc.) so it's
+  obvious at a glance which build a given GitHub Release asset is.
 - **Keep `README.md` and `CHANGELOG.md` current in the same pass as the change**, not as later
   cleanup — new features, DSP behavior changes, and UI redesigns each get a CHANGELOG entry and a
   relevant README update. When a change affects what's on screen, the paired
@@ -132,12 +124,10 @@ These are the habits worth keeping if you're working on this codebase with an AI
 
 ## Current state (as of this session)
 
-- **SPANDEX**: `v0.2.1` on GitHub, Dropbox tester folder up to date.
-- **Multiband Convolver**: `v0.2.0` on GitHub, Dropbox tester folder restructured to match
-  SPANDEX's layout (see above).
-- Both projects' Dropbox folders now follow the identical loose-files-plus-`README.txt`
-  structure, and both installer naming schemes match (`<Product>-Setup-Windows-vX.Y.Z.exe` /
-  `<Product>-Installer-macOS-<arch>-vX.Y.Z.pkg`).
+- **SPANDEX**: `v0.2.1` shipped as a GitHub Release, matching versioned installer naming
+  (`SPANDEX-Setup-Windows-vX.Y.Z.exe` / `SPANDEX-Installer-macOS-arm64-vX.Y.Z.pkg`).
+- See that project's own GitHub Releases page for its current version — don't assume this doc's
+  snapshot is still accurate.
 
 ## For whoever picks this up
 
