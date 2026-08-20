@@ -67,7 +67,7 @@ jobs:
           cp -R build/SPANDEX_artefacts/Release/VST3/SPANDEX.vst3 "pkgroot/Library/Audio/Plug-Ins/VST3/"
           pkgbuild --root pkgroot \
             --identifier com.spandex.app \
-            --version 0.2.1 \
+            --version 0.2.2 \
             --install-location / \
             SPANDEX-macOS-arm64-Installer.pkg
 
